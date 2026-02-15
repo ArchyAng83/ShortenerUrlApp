@@ -10,6 +10,7 @@ namespace ShortenerUrlApp.WebApi.Services
 {
     public class ShortenerUrlService(ShortenerUrlDbContext context, IConnectionMultiplexer redis) : IShortenerUrlService
     {
+        //Redis для обработки 10к кликов в секунду
         private readonly IDatabase _cache = redis.GetDatabase();
 
         public async Task DeleteUrlAsync(Guid id, CancellationToken ct = default)
