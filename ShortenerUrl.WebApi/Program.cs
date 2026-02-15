@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using ShortenerUrlApp.WebApi.Data;
+using ShortenerUrlApp.WebApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,8 @@ builder.Services.AddDbContext<ShortenerUrlDbContext>(opt =>
 {
     opt.UseMySQL(connection!);
 });
+
+builder.Services.AddScoped<IShortenerUrlService, ShortenerUrlService>();
 
 var app = builder.Build();
 
@@ -34,6 +37,19 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapGet("/{code}", async (string code, IShortenerUrlService service, CancellationToken ct) =>
+{
+    // Метод сервиса сначала проверит Redis, что обеспечит высокую скорость
+    var longUrl = await service.GetLongUrlAsync(code, ct);
+
+    if (string.IsNullOrEmpty(longUrl))
+        return Results.NotFound("Короткая ссылка не найдена.");
+
+    // 302 Redirect — браузер перейдет по адресу, а мы засчитаем клик
+    return Results.Redirect(longUrl);
+})
+.WithName("RedirectToLongUrl");
 
 using (var scope = app.Services.CreateScope())
 {

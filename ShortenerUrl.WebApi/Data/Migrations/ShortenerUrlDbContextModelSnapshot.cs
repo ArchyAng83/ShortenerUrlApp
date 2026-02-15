@@ -45,7 +45,7 @@ namespace ShortenerUrlApp.WebApi.Data.Migrations
                     b.HasIndex("ShortCode")
                         .IsUnique();
 
-                    b.ToTable("SortenerUrls");
+                    b.ToTable("SortenerUrls", (string)null);
                 });
 #pragma warning restore 612, 618
         }
