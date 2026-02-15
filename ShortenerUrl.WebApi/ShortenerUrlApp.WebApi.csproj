@@ -19,6 +19,11 @@
     </PackageReference>
     <PackageReference Include="MySql.EntityFrameworkCore" Version="10.0.1" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.12.40" />
+    <PackageReference Include="StackExchange.Redis" Version="2.11.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ShortenerUrlApp.Shared\ShortenerUrlApp.Shared.csproj" />
   </ItemGroup>
 
 </Project>

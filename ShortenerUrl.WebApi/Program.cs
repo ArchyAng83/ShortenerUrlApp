@@ -17,6 +17,13 @@ builder.Services.AddDbContext<ShortenerUrlDbContext>(opt =>
     opt.UseMySQL(connection!);
 });
 
+builder.Services.AddCors(options => {
+    options.AddDefaultPolicy(policy =>
+        policy.WithOrigins("https://localhost:7159")
+         .AllowAnyMethod()
+         .AllowAnyHeader());
+});
+
 builder.Services.AddScoped<IShortenerUrlService, ShortenerUrlService>();
 
 var app = builder.Build();
@@ -32,11 +39,13 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.UseCors();
 
 app.MapGet("/{code}", async (string code, IShortenerUrlService service, CancellationToken ct) =>
 {
@@ -44,7 +53,7 @@ app.MapGet("/{code}", async (string code, IShortenerUrlService service, Cancella
     var longUrl = await service.GetLongUrlAsync(code, ct);
 
     if (string.IsNullOrEmpty(longUrl))
-        return Results.NotFound("Короткая ссылка не найдена.");
+        return Results.NotFound("Url not found!");
 
     // 302 Redirect — браузер перейдет по адресу, а мы засчитаем клик
     return Results.Redirect(longUrl);

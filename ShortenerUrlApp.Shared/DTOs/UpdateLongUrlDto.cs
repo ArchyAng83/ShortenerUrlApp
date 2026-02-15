@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace ShortenerUrlApp.WebApi.DTOs
+namespace ShortenerUrlApp.Shared.DTOs
 {
     public record UpdateLongUrlDto(Guid Id, [Required][Url] string LongUrl);
     

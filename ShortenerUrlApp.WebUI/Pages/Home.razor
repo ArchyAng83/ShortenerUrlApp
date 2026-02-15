@@ -1,0 +1,112 @@
+﻿@page "/"
+
+<PageTitle>URL Shortener</PageTitle>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+        <h3 class="mb-0">URL Shortener Manager</h3>
+        <button class="btn btn-outline-success btn-sm" @onclick="() => OpenModal()">+ Shortening URL</button>
+    </div>
+    <div class="card-body">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Long URL</th>
+                    <th>Short URL</th>
+                    <th>Create Date</th>
+                    <th>Clicks</th>
+                    <th class="text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_urls == null)
+                {
+                    <tr><td colspan="5" class="text-center">Loading...</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _urls)
+                    {
+                        <tr>
+                            <td><a href="@item.LongUrl" target="_blank">@item.LongUrl</a></td>
+                            <td><a href="@item.ShortUrl" target="_blank">@item.ShortUrl</a></td>
+                            <td>@item.CreateAt.ToLocalTime().ToString("g")</td>
+                            <td><span class="badge bg-info text-dark">@item.CountOfClick</span></td>
+                            <td class="text-center">
+                                <button class="btn btn-outline-warning btn-sm me-2" @onclick="() => OpenModal(item)">Edit</button>
+                                <button class="btn btn-outline-danger btn-sm" @onclick="() => Delete(item.Id)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@* Попап для создания и редактирования *@
+@if (_isModalOpen)
+{
+    <div class="modal show d-block" style="background: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(_editingId == null ? "Shotening URL" : "Edit URL")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Введите длинный URL</label>
+                        <input type="text" class="form-control" @bind="_inputUrl" placeholder="https://example.com/very-long-path" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-primary" @onclick="Save">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<UrlResposeDto>? _urls;
+    private bool _isModalOpen = false;
+    private Guid? _editingId = null;
+    private string _inputUrl = "";
+
+    protected override async Task OnInitializedAsync() => await Refresh();
+
+    private async Task Refresh() =>
+        _urls = await Http.GetFromJsonAsync<List<UrlResposeDto>>("api/ShortenerUrl");
+
+    private void OpenModal(UrlResposeDto? item = null)
+    {
+        _editingId = item?.Id;
+        _inputUrl = item?.LongUrl ?? "";
+        _isModalOpen = true;
+    }
+
+    private void CloseModal() => _isModalOpen = false;
+
+    private async Task Save()
+    {
+        if (_editingId == null)
+        {
+            await Http.PostAsJsonAsync("api/ShortenerUrl", new CreateShortUrlDto(_inputUrl));
+        }
+        else
+        {
+            await Http.PutAsJsonAsync($"api/ShortenerUrl/{_editingId}", new UpdateLongUrlDto(_editingId.Value, _inputUrl));
+        }
+        CloseModal();
+        await Refresh();
+    }
+
+    private async Task Delete(Guid id)
+    {
+        await Http.DeleteAsync($"api/ShortenerUrl/{id}");
+        await Refresh();
+    }
+}
+

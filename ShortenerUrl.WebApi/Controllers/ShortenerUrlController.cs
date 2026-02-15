@@ -1,5 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using ShortenerUrlApp.WebApi.DTOs;
+using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Services;
 
 namespace ShortenerUrlApp.WebApi.Controllers
@@ -16,7 +16,7 @@ namespace ShortenerUrlApp.WebApi.Controllers
             var response = shortenerUrls.Select(u => new UrlResposeDto(
                 u.Id,
                 u.LongUrl,
-                $"{Request.Scheme}://{u.ShortCode}",
+                $"{Request.Scheme}://{Request.Host}/{u.ShortCode}",
                 u.CreateAt,
                 u.CountOfClick));
 

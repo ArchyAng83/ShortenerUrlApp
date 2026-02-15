@@ -1,4 +1,4 @@
-﻿namespace ShortenerUrlApp.WebApi.DTOs
+﻿namespace ShortenerUrlApp.Shared.DTOs
 {
     public record UrlResposeDto(
         Guid Id,

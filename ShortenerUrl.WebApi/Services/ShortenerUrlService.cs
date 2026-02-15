@@ -2,13 +2,16 @@
 using ShortenerUrlApp.WebApi.Constants;
 using ShortenerUrlApp.WebApi.Data;
 using ShortenerUrlApp.WebApi.Entities;
+using StackExchange.Redis;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace ShortenerUrlApp.WebApi.Services
 {
-    public class ShortenerUrlService(ShortenerUrlDbContext context) : IShortenerUrlService
+    public class ShortenerUrlService(ShortenerUrlDbContext context, IConnectionMultiplexer redis) : IShortenerUrlService
     {
+        private readonly IDatabase _cache = redis.GetDatabase();
+
         public async Task DeleteUrlAsync(Guid id, CancellationToken ct = default)
         {
             var shortenerUrl = await context.ShortenerUrls.FindAsync(id, ct);
@@ -28,7 +31,8 @@ namespace ShortenerUrlApp.WebApi.Services
 
         public async Task<string> GetLongUrlAsync(string shortCode, CancellationToken ct = default)
         {
-            var shortenerUrl = await context.ShortenerUrls.FindAsync(shortCode, ct);
+            var shortenerUrl = await context.ShortenerUrls
+                .FirstOrDefaultAsync(u => u.ShortCode == shortCode, ct); ;
 
             if (shortenerUrl is null)
                 return null!;

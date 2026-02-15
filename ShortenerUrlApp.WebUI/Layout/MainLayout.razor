@@ -1,0 +1,12 @@
+﻿@inherits LayoutComponentBase
+<main>
+    <div class="container mt-5">
+        @Body
+    </div>
+</main>
+
+<style>
+    /* Убираем стандартные отступы Blazor шаблона */
+    .page { position: relative; display: flex; flex-direction: column; }
+    main { flex: 1; }
+</style>
