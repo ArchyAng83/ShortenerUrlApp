@@ -121,7 +121,8 @@ namespace ShortenerUrlApp.WebApi.Services
             }
         }
 
-        private static string GenerateCode()
+        //public, чтобы тесты прошли
+        public static string GenerateCode()
         {
             var sb = new StringBuilder(Constant.MAX_LENGTH_SHORT_URL);
 

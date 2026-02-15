@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="ShortenerUrl.WebApi/ShortenerUrlApp.WebApi.csproj" />
   <Project Path="ShortenerUrlApp.Shared/ShortenerUrlApp.Shared.csproj" Id="236c9ec8-5193-4ac7-8efc-ee3328424655" />
+  <Project Path="ShortenerUrlApp.Tests/ShortenerUrlApp.Tests.csproj" Id="a885ccc4-2727-425f-b7ec-aa70f3e069ea" />
   <Project Path="ShortenerUrlApp.WebUI/ShortenerUrlApp.WebUI.csproj" Id="3fcac4ce-eca6-4bf2-bfcf-45ea877abb0f" />
 </Solution>
