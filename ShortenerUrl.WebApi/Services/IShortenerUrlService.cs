@@ -9,5 +9,6 @@ namespace ShortenerUrlApp.WebApi.Services
         Task<List<ShortenerUrl>> GetAllUrlsAsync(CancellationToken ct);
         Task UpdateUrlAsync(Guid id, string newLongUrl, CancellationToken ct);
         Task DeleteUrlAsync(Guid id, CancellationToken ct);
+        Task SyncClicksToDbAsync(CancellationToken ct);
     }
 }

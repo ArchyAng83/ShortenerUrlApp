@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using ShortenerUrlApp.WebApi.Data;
 using ShortenerUrlApp.WebApi.Services;
+using StackExchange.Redis;
+using System.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,11 +13,17 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-var connection = builder.Configuration.GetConnectionString("DefaultConnection");
+var connection = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Database not found."); ;
 builder.Services.AddDbContext<ShortenerUrlDbContext>(opt =>
 {
     opt.UseMySQL(connection!);
 });
+
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+            ?? throw new InvalidOperationException("Redis connection not found.");
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
 
 builder.Services.AddCors(options => {
     options.AddDefaultPolicy(policy =>
@@ -25,6 +33,7 @@ builder.Services.AddCors(options => {
 });
 
 builder.Services.AddScoped<IShortenerUrlService, ShortenerUrlService>();
+builder.Services.AddHostedService<ClickSyncWorker>();
 
 var app = builder.Build();
 

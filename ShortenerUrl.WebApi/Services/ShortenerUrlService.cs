@@ -18,6 +18,9 @@ namespace ShortenerUrlApp.WebApi.Services
 
             if (shortenerUrl is not null)
             {
+                await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
+                await _cache.KeyDeleteAsync($"clicks:{shortenerUrl.ShortCode}");
+
                 context.ShortenerUrls.Remove(shortenerUrl);
                 await context.SaveChangesAsync(ct);
             }
@@ -31,14 +34,25 @@ namespace ShortenerUrlApp.WebApi.Services
 
         public async Task<string> GetLongUrlAsync(string shortCode, CancellationToken ct = default)
         {
+            string? cachedUrl = await _cache.StringGetAsync($"url:{shortCode}");
+
+            if (!string.IsNullOrEmpty(cachedUrl))
+            { 
+                // Это не блокирует базу данных MySQL при 10к запросах в секунду.
+                _ = _cache.StringIncrementAsync($"clicks:{shortCode}");
+                return cachedUrl;
+            }
+
+
             var shortenerUrl = await context.ShortenerUrls
                 .FirstOrDefaultAsync(u => u.ShortCode == shortCode, ct); ;
 
             if (shortenerUrl is null)
                 return null!;
 
-            shortenerUrl.CountOfClick++;
-            await context.SaveChangesAsync(ct);
+            await _cache.StringSetAsync($"url:{shortCode}", shortenerUrl.LongUrl, TimeSpan.FromDays(1));
+
+            _ = await _cache.StringIncrementAsync($"clicks:{shortCode}");
 
             return shortenerUrl.LongUrl;
         }
@@ -73,6 +87,31 @@ namespace ShortenerUrlApp.WebApi.Services
             {
                 shortenerUrl.LongUrl = newLongUrl;
                 await context.SaveChangesAsync(ct);
+
+                await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
+            }
+        }
+
+        //Для синхронизации Redis с БД
+        public async Task SyncClicksToDbAsync(CancellationToken ct)
+        {
+            var server = redis.GetServer(redis.GetEndPoints()[0]);
+            var keys = server.Keys(pattern: "clicks:*").ToList();
+
+            foreach (var key in keys)
+            {
+                var shortCode = key.ToString().Replace("clicks:", "");
+
+                // Получаем значение и удаляем ключ из Redis за одну операцию
+                var clicks = (int)await _cache.StringGetDeleteAsync(key);
+
+                if (clicks > 0)
+                {
+                    // Обновляем БД: инкрементируем счетчик прямо в SQL запросе
+                    await context.ShortenerUrls
+                        .Where(u => u.ShortCode == shortCode)
+                        .ExecuteUpdateAsync(s => s.SetProperty(u => u.CountOfClick, u => u.CountOfClick + clicks), ct);
+                }
             }
         }
 
@@ -82,12 +121,14 @@ namespace ShortenerUrlApp.WebApi.Services
 
             for (int i = 0; i < Constant.MAX_LENGTH_SHORT_URL; i++)
             {
-                // Математически стойкий выбор индекса без смещения (bias)
+                // Математически стойкий выбор индекса без смещения 
                 int index = RandomNumberGenerator.GetInt32(Constant.ALPHABET.Length);
                 sb.Append(Constant.ALPHABET[index]);
             }
 
             return sb.ToString();
         }
+
+        
     }
 }
