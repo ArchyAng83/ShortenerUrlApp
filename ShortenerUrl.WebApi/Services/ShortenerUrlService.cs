@@ -103,14 +103,19 @@ namespace ShortenerUrlApp.WebApi.Services
                 var shortCode = key.ToString().Replace("clicks:", "");
 
                 // Получаем значение и удаляем ключ из Redis за одну операцию
-                var clicks = (int)await _cache.StringGetDeleteAsync(key);
+                var clicksValue = await _cache.StringGetDeleteAsync(key);
 
-                if (clicks > 0)
+                if (clicksValue.HasValue && (int)clicksValue > 0)
                 {
-                    // Обновляем БД: инкрементируем счетчик прямо в SQL запросе
+                    int clicks = (int)clicksValue;
+
+                    //Выполняем быстрый UPDATE в базе без загрузки всей сущности в память
                     await context.ShortenerUrls
                         .Where(u => u.ShortCode == shortCode)
-                        .ExecuteUpdateAsync(s => s.SetProperty(u => u.CountOfClick, u => u.CountOfClick + clicks), ct);
+                        .ExecuteUpdateAsync(s => s.SetProperty(
+                            u => u.CountOfClick,
+                            u => u.CountOfClick + clicks),
+                            ct);
                 }
             }
         }
@@ -128,7 +133,5 @@ namespace ShortenerUrlApp.WebApi.Services
 
             return sb.ToString();
         }
-
-        
     }
 }
