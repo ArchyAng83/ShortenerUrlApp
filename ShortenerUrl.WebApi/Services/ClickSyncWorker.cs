@@ -19,7 +19,7 @@
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Ошибка синхронизации кликов: {ex.Message}");
+                    Console.WriteLine($"Error Sync: {ex.Message}");
                 }
             }
         }
