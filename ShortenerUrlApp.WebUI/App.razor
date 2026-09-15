@@ -1,6 +1,31 @@
-﻿<Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+<Router AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)"/>
+        <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+            <Authorizing>
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            </Authorizing>
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated != true)
+                {
+                    <RedirectToLogin />
+                }
+                else
+                {
+                    <MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-10">
+                        <MudAlert Severity="Severity.Warning">You are not allowed to view this page.</MudAlert>
+                    </MudContainer>
+                }
+            </NotAuthorized>
+        </AuthorizeRouteView>
         <FocusOnNavigate RouteData="@routeData" Selector="h1" />
     </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-10 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.LinkOff" Size="Size.Large" Color="Color.Secondary" />
+                <MudText Typo="Typo.h5" Class="mt-2">Page not found</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/" Class="mt-4">Go home</MudButton>
+            </MudContainer>
+        </LayoutView>
+    </NotFound>
 </Router>

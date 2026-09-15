@@ -1,0 +1,207 @@
+@* Create/edit dialog for shortened URLs. In edit mode only the destination URL is mutable;
+   alias, expiry and click caps are set at creation time and are immutable afterwards
+   (matching the API contract). *@
+@using System.ComponentModel.DataAnnotations
+@using ShortenerUrlApp.Shared.Validation
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@(_isEdit ? Icons.Material.Filled.Edit : Icons.Material.Filled.AddLink)"
+                     Class="mr-2" Color="Color.Primary" />
+            @(_isEdit ? "Edit destination URL" : "Shorten a URL")
+        </MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="SubmitAsync">
+            <DataAnnotationsValidator />
+
+            <div class="d-flex flex-column" style="gap:16px;">
+
+                <MudTextField @bind-Value="_model.LongUrl"
+                              For="@(() => _model.LongUrl)"
+                              Label="Long URL"
+                              Placeholder="https://example.com/a-very-long/path"
+                              Variant="Variant.Filled"
+                              Margin="Margin.Dense"
+                              Immediate="true"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Link"
+                              IconSize="Size.Medium" />
+
+                @* Custom alias: create mode only — the API never allows renaming a short code. *@
+                @if (!_isEdit)
+                {
+                    <MudTextField @bind-Value="_model.CustomAlias"
+                                  For="@(() => _model.CustomAlias)"
+                                  Label="Custom alias (optional)"
+                                  Placeholder="my-promo"
+                                  Variant="Variant.Filled"
+                                  Margin="Margin.Dense"
+                                  Adornment="Adornment.Start"
+                                  AdornmentText="/"
+                                  IconSize="Size.Medium"
+                                  Immediate="true"
+                                  HelperText="3–20 characters: letters, digits, hyphen, underscore. Left empty = random code." />
+
+                    <MudNumericField @bind-Value="_expiresInMinutes"
+                                     Label="Expires in (minutes, optional)"
+                                     Variant="Variant.Filled"
+                                     Margin="Margin.Dense"
+                                     Min="1"
+                                     Max="525600"
+                                     Adornment="Adornment.End"
+                                     AdornmentText="min"
+                                     HelperText="1 minute – 1 year. Leave empty for a permanent link." />
+
+                    <MudNumericField @bind-Value="_maxClicks"
+                                     Label="Max clicks (optional)"
+                                     Variant="Variant.Filled"
+                                     Margin="Margin.Dense"
+                                     Min="1"
+                                     Adornment="Adornment.End"
+                                     AdornmentText="clicks"
+                                     HelperText="Redirect stops after this many clicks. Leave empty for unlimited." />
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        The short code, expiry and click cap cannot be changed after creation.
+                    </MudAlert>
+                }
+            </div>
+
+            @* Server-side validation messages (400/409) surface here instead of a second dialog. *@
+            @if (_serverError is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-4" Dense="true">@_serverError</MudAlert>
+            }
+
+            @* EditForm renders an invisible submit button so Enter triggers OnValidSubmit. *@
+            <button type="submit" hidden></button>
+        </EditForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton OnClick="SubmitAsync"
+                   Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="_busy">
+            @(_isEdit ? "Save" : "Create")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    /// <summary>Existing URL to edit; null means "create a new link".</summary>
+    [CascadingParameter] private MudDialogInstance MudDialogInstance { get; set; } = default!;
+    [Parameter] public UrlResposeDto? Existing { get; set; }
+
+    private sealed class UrlFormModel
+    {
+        [Required(ErrorMessage = "URL is required.")]
+        [HttpUrl]
+        public string LongUrl { get; set; } = string.Empty;
+
+        [StringLength(20, MinimumLength = 3, ErrorMessage = "Alias must be 3–20 characters long.")]
+        [RegularExpression(@"^[a-zA-Z0-9_-]+$", ErrorMessage = "Only letters, digits, hyphen and underscore.")]
+        public string? CustomAlias { get; set; }
+    }
+
+    private UrlFormModel _model = new();
+    private int? _expiresInMinutes;
+    private int? _maxClicks;
+    private bool _busy;
+    private string? _serverError;
+
+    private bool _isEdit;
+
+    protected override void OnInitialized()
+    {
+        _isEdit = Existing is not null;
+
+        if (Existing is not null)
+        {
+            _model = new UrlFormModel { LongUrl = Existing.LongUrl };
+        }
+    }
+
+    private void Cancel() => MudDialogInstance.Cancel();
+
+    private async Task SubmitAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        // Manual check mirrors the DTO attributes for the optional alias length.
+        if (!_isEdit && !string.IsNullOrWhiteSpace(_model.CustomAlias))
+        {
+            var alias = _model.CustomAlias.Trim();
+
+            if (alias.Length is < 3 or > 20 || !System.Text.RegularExpressions.Regex.IsMatch(alias, "^[a-zA-Z0-9_-]+$"))
+            {
+                _serverError = "Alias must be 3–20 characters: letters, digits, hyphen or underscore.";
+                return;
+            }
+        }
+
+        _busy = true;
+        _serverError = null;
+
+        try
+        {
+            if (!_isEdit)
+            {
+                var alias = string.IsNullOrWhiteSpace(_model.CustomAlias) ? null : _model.CustomAlias.Trim();
+                var expires = _expiresInMinutes is > 0 ? _expiresInMinutes : null;
+                var clicks = _maxClicks is > 0 ? _maxClicks : null;
+
+                var dto = new CreateShortUrlDto(_model.LongUrl.Trim())
+                {
+                    CustomAlias = alias,
+                    ExpiresInMinutes = expires,
+                    MaxClicks = clicks
+                };
+
+                var response = await Http.PostAsJsonAsync("api/ShortenerUrl", dto);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errors = await ApiErrorReader.ReadErrorsAsync(response);
+                    _serverError = errors.Count > 0 ? string.Join(" ", errors) : $"Server error ({(int)response.StatusCode}).";
+                    return;
+                }
+
+                // On success the API returns the bare short code as a JSON string.
+                var newCode = await response.Content.ReadFromJsonAsync<string>();
+
+                MudDialogInstance.Close(DialogResult.Ok(newCode ?? string.Empty));
+                return;
+            }
+
+            var updateDto = new UpdateLongUrlDto(Existing!.Id, _model.LongUrl.Trim());
+            var updateResponse = await Http.PutAsJsonAsync("api/ShortenerUrl", updateDto);
+
+            if (!updateResponse.IsSuccessStatusCode)
+            {
+                var errors = await ApiErrorReader.ReadErrorsAsync(updateResponse);
+                _serverError = errors.Count > 0 ? string.Join(" ", errors) : $"Server error ({(int)updateResponse.StatusCode}).";
+                return;
+            }
+
+            MudDialogInstance.Close(DialogResult.Ok("saved"));
+        }
+        catch (HttpRequestException)
+        {
+            _serverError = "Could not reach the API. Is the server running?";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

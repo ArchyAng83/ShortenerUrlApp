@@ -1,0 +1,434 @@
+@page "/urls/{Id:guid}"
+@attribute [Authorize]
+@inject NavigationManager Navigation
+@inject IDialogService Dialog
+@inject ISnackbar Snackbar
+
+<PageTitle>Link analytics — ShortenerUrl</PageTitle>
+
+@if (_url is null && !_loading)
+{
+    <MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-10">
+        <MudAlert Severity="Severity.Warning">This link was not found or you no longer own it.</MudAlert>
+        <MudButton Href="/dashboard" Variant="Variant.Filled" Color="Color.Primary" Class="mt-4">
+            Back to dashboard
+        </MudButton>
+    </MudContainer>
+}
+else if (_url is not null)
+{
+    <div class="d-flex align-center flex-wrap mb-4" style="gap:12px;">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/dashboard" title="Back to dashboard" />
+        <div>
+            <MudText Typo="Typo.h4">/@UrlHelpers.CodeFromShortUrl(_url.ShortUrl)</MudText>
+            <MudText Typo="Typo.body2">
+                <MudLink Href="@_url.ShortUrl" Target="_blank" Underline="Underline.Hover">@_url.ShortUrl</MudLink>
+                <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" Class="ml-1" />
+            </MudText>
+        </div>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.QrCode2"
+                   OnClick="OpenQrAsync">
+            QR code
+        </MudButton>
+    </div>
+
+    @* Fact cards *@
+    <MudGrid Class="mb-2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.overline">Clicks in range</MudText>
+                <MudText Typo="Typo.h4">@Format(_inRangeClicks)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.overline">Total clicks</MudText>
+                <MudText Typo="Typo.h4">@Format(_url.CountOfClick)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.overline">Created</MudText>
+                <MudText Typo="Typo.h6" Class="mt-1">@FormatLocal(_url.CreateAt)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.overline">Lifetime limits</MudText>
+                <div class="mt-1">
+                    @if (_url.ExpiresAt is { } expires)
+                    {
+                        <MudTooltip Text="@FormatLocal(expires)">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="mr-1">
+                                expires @FormatLocal(expires)
+                            </MudChip>
+                        </MudTooltip>
+                    }
+                    @if (_url.MaxClicks is { } maxClicks)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info">max @Format(maxClicks) clicks</MudChip>
+                    }
+                    @if (_url.ExpiresAt is null && _url.MaxClicks is null)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">unlimited</MudChip>
+                    }
+                </div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* Destination *@
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <MudText Typo="Typo.overline">Destination</MudText>
+        <MudText Typo="Typo.body1" Style="word-break:break-all;">
+            <MudLink Href="@_url.LongUrl" Target="_blank" Underline="Underline.Hover">@_url.LongUrl</MudLink>
+        </MudText>
+    </MudPaper>
+
+    @* Analytics filters *@
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <div class="d-flex align-end flex-wrap" style="gap:12px;">
+            <MudDateRangePicker @bind-DateRange="_range"
+                                Label="Date range"
+                                Variant="Variant.Outlined"
+                                Margin="Margin.Dense"
+                                />
+            <MudSelect T="string" @bind-Value="_groupBy" Label="Group by" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width:140px;">
+                <MudSelectItem Value="@("day")">Per day</MudSelectItem>
+                <MudSelectItem Value="@("week")">Per week</MudSelectItem>
+                <MudSelectItem Value="@("month")">Per month</MudSelectItem>
+            </MudSelect>
+            <div class="d-flex" style="gap:8px;">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.QueryStats"
+                           Disabled="_analyticsLoading"
+                           OnClick="LoadAnalyticsAsync">
+                    Apply
+                </MudButton>
+                @foreach (var preset in Presets)
+                {
+                    <MudButton Variant="Variant.Text"
+                               Size="Size.Small"
+                               OnClick="@(() => ApplyPresetAsync(preset.Item2))">
+                        @preset.Item1
+                    </MudButton>
+                }
+            </div>
+        </div>
+    </MudPaper>
+
+    @* Charts *@
+    <MudGrid>
+        <MudItem xs="12" lg="7">
+            <MudPaper Class="pa-4 h-100" Elevation="2">
+                <div class="d-flex align-center justify-space-between mb-2">
+                    <MudText Typo="Typo.h6">Clicks over time</MudText>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@_groupBy</MudChip>
+                </div>
+                @if (_analyticsLoading)
+                {
+                    <div class="d-flex justify-center align-center" style="height:320px;">
+                        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                    </div>
+                }
+                else if (_clickSeries.Count == 0 || _clickSeries[0].Data.All(d => d == 0))
+                {
+                    <MudText Typo="Typo.body2" Class="py-10 text-center">No clicks in the selected period.</MudText>
+                }
+                else
+                {
+                    <MudChart ChartType="ChartType.Line"
+                              ChartSeries="_clickSeries"
+                              XAxisLabels="_chartLabels"
+                              Style="width:100%;height:320px;" />
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" lg="5">
+            <MudPaper Class="pa-4 h-100" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-2">Clicks by country</MudText>
+                @if (_analyticsLoading)
+                {
+                    <div class="d-flex justify-center align-center" style="height:320px;">
+                        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                    </div>
+                }
+                else if (_countrySeries.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="py-10 text-center">No geo data recorded yet.</MudText>
+                }
+                else
+                {
+                    <div Class="px-8">
+                        <MudChart ChartType="ChartType.Pie"
+                                  ChartSeries="_countrySeries"
+                                  Style="width:100%;height:300px;" />
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">Top referrers</MudText>
+                @if (_referrerBreakdown.Count == 0)
+                {
+                    <MudText Typo="Typo.body2">No referrer data recorded yet.</MudText>
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true">
+                        <thead>
+                            <tr>
+                                <th>Referrer</th>
+                                <th style="width:58%;" Class="d-none d-sm-table-cell">Share</th>
+                                <th Style="text-align:right;">Clicks</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _referrerBreakdown)
+                            {
+                                <tr>
+                                    <td>@row.Name</td>
+                                    <td Class="d-none d-sm-table-cell">
+                                        <div style="min-width:100px;">
+                                            <MudProgressLinear
+                                                               Color="Color.Primary"
+                                                               Value="Percent(row.Count, _referrerTotal)" />
+                                        </div>
+                                    </td>
+                                    <td Style="text-align:right;">@Format(row.Count)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private UrlResposeDto? _url;
+    private bool _loading = true;
+    private bool _analyticsLoading;
+
+    private DateRange? _range;
+    private string _groupBy = "day";
+    private int _inRangeClicks;
+
+    private List<ChartSeries> _clickSeries = [];
+    private string[] _chartLabels = [];
+    private List<ChartSeries> _countrySeries = [];
+    private List<NameCountDto> _referrerBreakdown = [];
+    private int _referrerTotal;
+
+    private static readonly (string Label, int Days)[] Presets =
+    [
+        ("7d", 7), ("30d", 30), ("90d", 90)
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            var all = await Http.GetFromJsonAsync<List<UrlResposeDto>>("api/ShortenerUrl") ?? [];
+            _url = all.FirstOrDefault(u => u.Id == Id);
+        }
+        catch (HttpRequestException)
+        {
+            Snackbar.Add("Could not load the link.", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        if (_url is not null)
+        {
+            ApplyPreset(14);
+            await LoadAnalyticsAsync();
+        }
+        else
+        {
+            Snackbar.Add("Link not found.", Severity.Warning);
+        }
+    }
+
+    private async Task ApplyPresetAsync(int days)
+    {
+        ApplyPreset(days);
+        await LoadAnalyticsAsync();
+    }
+
+    private void ApplyPreset(int days)
+    {
+        var to = DateTime.UtcNow.Date;
+        var from = to.AddDays(-(days - 1));
+
+        _range = new DateRange(from, to);
+        _groupBy = days switch { <= 31 => "day", <= 120 => "week", _ => "month" };
+    }
+
+    private async Task LoadAnalyticsAsync()
+    {
+        if (_url is null)
+        {
+            return;
+        }
+
+        _analyticsLoading = true;
+
+        try
+        {
+            // Date-picker values are local midnights; the API stores UTC. The browser's
+            // zone is the authority here, so normalize with ToUniversalTime().
+            var from = LocalToUtc(_range?.Start ?? DateTime.UtcNow.Date.AddDays(-13)).Date;
+            var to = LocalToUtc(_range?.End ?? DateTime.UtcNow.Date).Date;
+            var toInclusive = to.AddDays(1).AddTicks(-1);
+
+            var query = $"api/v1/urls/{_url.Id}/analytics?groupBy={_groupBy}&dateFrom={from:O}&dateTo={toInclusive:O}";
+
+            var summary = await Http.GetFromJsonAsync<AnalyticsSummaryDto>(query);
+
+            if (summary is null)
+            {
+                return;
+            }
+
+            _inRangeClicks = summary.TotalClicks;
+
+            BuildTimeSeries(summary.ClicksByPeriod, from.Date, toInclusive.Date);
+            BuildCountryChart(summary.ClicksByCountry);
+
+            _referrerBreakdown = summary.TopReferrers;
+            _referrerTotal = summary.TopReferrers.Sum(r => r.Count);
+        }
+        catch (HttpRequestException)
+        {
+            Snackbar.Add("Analytics endpoint is unreachable.", Severity.Error);
+        }
+        finally
+        {
+            _analyticsLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// The API returns only non-zero buckets; charts need a continuous timeline, so
+    /// missing days/weeks/months are zero-filled client-side across the selected range.
+    /// </summary>
+    private void BuildTimeSeries(List<ClicksByPeriodDto> buckets, DateTime from, DateTime to)
+    {
+        var byKey = buckets.ToDictionary(b => b.Date, b => b.Count);
+
+        var labels = new List<string>();
+        var counts = new List<double>();
+
+        var cursor = BucketStart(from);
+
+        while (cursor <= to)
+        {
+            var key = KeyFor(cursor);
+
+            labels.Add(FormatBucket(cursor));
+            counts.Add(byKey.TryGetValue(key, out var value) ? value : 0);
+
+            cursor = _groupBy switch
+            {
+                "week" => cursor.AddDays(7),
+                "month" => cursor.AddMonths(1),
+                _ => cursor.AddDays(1)
+            };
+        }
+
+        _chartLabels = [.. labels];
+        _clickSeries = counts.Count > 0
+            ? [new ChartSeries { Name = "Clicks", Data = [.. counts] }]
+            : [];
+    }
+
+    private void BuildCountryChart(List<NameCountDto> byCountry)
+    {
+        // In v7 the pie gets one ChartSeries per slice; the slice legend is the series name.
+        // Too many slices become unreadable, so keep the top 6 and collapse the tail into "Other".
+        const int maxSlices = 6;
+
+        _countrySeries = [];
+
+        var ordered = byCountry.Where(c => c.Count > 0).OrderByDescending(c => c.Count).ToList();
+
+        foreach (var row in ordered.Take(maxSlices))
+        {
+            var name = string.IsNullOrEmpty(row.Name) ? "Unknown" : row.Name;
+            _countrySeries.Add(new ChartSeries { Name = name, Data = [row.Count] });
+        }
+
+        var restCount = ordered.Skip(maxSlices).Sum(c => c.Count);
+
+        if (restCount > 0)
+        {
+            _countrySeries.Add(new ChartSeries { Name = "Other", Data = [restCount] });
+        }
+    }
+
+    // Week buckets start on Monday to mirror the server's grouping.
+    private DateTime BucketStart(DateTime date) =>
+        _groupBy == "week" ? date.AddDays(-(((int)date.DayOfWeek + 6) % 7)) : _groupBy == "month" ? new DateTime(date.Year, date.Month, 1) : date.Date;
+
+    private string KeyFor(DateTime bucket) =>
+        _groupBy switch
+        {
+            "week" => bucket.ToString("yyyy-MM-dd"),
+            "month" => bucket.ToString("yyyy-MM"),
+            _ => bucket.ToString("yyyy-MM-dd")
+        };
+
+    private string FormatBucket(DateTime bucket) =>
+        _groupBy switch
+        {
+            "month" => bucket.ToString("MMM yyyy"),
+            _ => bucket.ToString("dd MMM")
+        };
+
+    private static int Percent(int value, int total) =>
+        total <= 0 ? 0 : (int)Math.Round(value * 100.0 / total);
+
+    /// <summary>UTC values pass through; Unspecified/Local are converted in the browser's zone.</summary>
+    private static DateTime LocalToUtc(DateTime value) =>
+        value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
+
+    private static string Format(int value) => value.ToString("N0");
+
+    /// <summary>API timestamps are UTC; "Z"-less values are assumed UTC defensively.</summary>
+    private static string FormatLocal(DateTime value)
+    {
+        var utc = value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+
+        return utc.ToLocalTime().ToString("dd MMM yyyy, HH:mm");
+    }
+
+    private async Task OpenQrAsync()
+    {
+        var shortCode = UrlHelpers.CodeFromShortUrl(_url!.ShortUrl);
+
+        var parameters = new DialogParameters<QRCodeDialog>
+        {
+            { x => x.UrlId, _url.Id },
+            { x => x.ShortCode, shortCode }
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true };
+
+        await Dialog.ShowAsync<QRCodeDialog>($"QR code · /{shortCode}", parameters, options);
+    }
+}

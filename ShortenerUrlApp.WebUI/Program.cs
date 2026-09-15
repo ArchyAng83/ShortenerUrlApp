@@ -1,11 +1,34 @@
+using Blazored.LocalStorage;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using MudBlazor.Services;
 using ShortenerUrlApp.WebUI;
+using ShortenerUrlApp.WebUI.Services;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri("http://localhost:5153") });
+// API base URL comes from wwwroot/appsettings.json; the fallback keeps local dev working.
+var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5153";
+
+builder.Services.AddBlazoredLocalStorage();
+builder.Services.AddMudServices();
+
+// JWT-backed auth state for [Authorize] / <AuthorizeView>: the concrete provider is also
+// registered as AuthenticationStateProvider, and the cascading state feeds the components.
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<JwtAuthStateProvider>();
+builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<JwtAuthStateProvider>());
+
+// A DelegatingHandler must be transient: the scoped HttpClient owns one instance per scope,
+// and the factory-style chain must never be shared as a singleton.
+builder.Services.AddScoped<AuthService>();
+builder.Services.AddTransient<AuthorizationMessageHandler>();
+builder.Services.AddScoped(sp => new HttpClient(sp.GetRequiredService<AuthorizationMessageHandler>())
+{
+    BaseAddress = new Uri(apiBaseUrl)
+});
 
 await builder.Build().RunAsync();

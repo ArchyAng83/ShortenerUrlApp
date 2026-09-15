@@ -1,0 +1,45 @@
+@* Simple yes/no confirmation dialog shared by destructive actions. *@
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@Title</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <MudText>@Message</MudText>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancel">@(_cancelText ?? "Cancel")</MudButton>
+        <MudButton OnClick="Confirm"
+                   Variant="Variant.Filled"
+                   Color="@(_danger ? Color.Error : Color.Primary)">
+            @(_confirmText ?? "OK")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialogInstance { get; set; } = default!;
+
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public string? ConfirmText { get; set; }
+    [Parameter] public string? CancelText { get; set; }
+    [Parameter] public bool Danger { get; set; } = true;
+
+    private string? _confirmText;
+    private string? _cancelText;
+    private bool _danger = true;
+
+    protected override void OnParametersSet()
+    {
+        _confirmText = ConfirmText;
+        _cancelText = CancelText;
+        _danger = Danger;
+    }
+
+    private void Cancel() => MudDialogInstance.Cancel();
+
+    private void Confirm() => MudDialogInstance.Close(DialogResult.Ok(true));
+}

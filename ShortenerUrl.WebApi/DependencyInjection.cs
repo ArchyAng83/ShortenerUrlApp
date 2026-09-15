@@ -80,6 +80,7 @@ namespace ShortenerUrlApp.WebApi
             services.AddScoped<IShortenerUrlService, ShortenerUrlService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IAnalyticsService, AnalyticsService>();
+            services.AddScoped<IQRCodeService, QRCodeService>();
 
             // Exposes the current request (IP / User-Agent / Referer) to ShortenerUrlService
             // so it can buffer click metadata on the redirect path.

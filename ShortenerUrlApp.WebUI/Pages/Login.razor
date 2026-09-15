@@ -1,0 +1,124 @@
+@page "/login"
+@inject AuthService AuthApi
+@inject JwtAuthStateProvider AuthState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Sign in — ShortenerUrl</PageTitle>
+
+<MudGrid Justify="Justify.Center" Class="mt-10">
+    <MudItem xs="12" sm="8" md="5" lg="4">
+        <MudCard Elevation="6">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h5">Welcome back</MudText>
+                    <MudText Typo="Typo.body2">Sign in to manage your links.</MudText>
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    <MudIcon Icon="@Icons.Material.Filled.Link" Color="Color.Primary" Size="Size.Medium" />
+                </CardHeaderActions>
+            </MudCardHeader>
+
+            <MudCardContent Class="pt-0">
+                <EditForm Model="_input" OnValidSubmit="SubmitAsync">
+                    <DataAnnotationsValidator />
+
+                    <MudTextField @bind-Value="_input.Email"
+                                  For="@(() => _input.Email)"
+                                  Label="Email"
+                                  InputType="InputType.Email"
+                                  Variant="Variant.Filled"
+                                  Margin="Margin.Dense"
+                                  Placeholder="you@example.com"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Email"
+                                  IconSize="Size.Medium"
+                                  Immediate="true"
+                                  Class="mb-4" />
+
+                    <MudTextField @bind-Value="_input.Password"
+                                  For="@(() => _input.Password)"
+                                  Label="Password"
+                                  InputType="_showPassword ? InputType.Text : InputType.Password"
+                                  Variant="Variant.Filled"
+                                  Margin="Margin.Dense"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@(_showPassword ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                  IconSize="Size.Medium"
+                                  OnAdornmentClick="@(() => _showPassword = !_showPassword)" />
+
+                    <MudButton ButtonType="ButtonType.Submit"
+                               Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               Class="mt-6"
+                               Size="Size.Large"
+                               Disabled="_busy">
+                        @if (_busy)
+                        {
+                            <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="mr-2" />
+                            <span>Signing in…</span>
+                        }
+                        else
+                        {
+                            <span>Sign in</span>
+                        }
+                    </MudButton>
+                </EditForm>
+            </MudCardContent>
+
+            <div class="d-flex justify-space-between mud-primary-border-text pa-4" style="border-top:1px solid rgba(128,128,128,0.12);">
+                <MudText Typo="Typo.body2">Not a member yet?</MudText>
+                <MudLink Href="/register" Typo="Typo.body2">Create an account</MudLink>
+            </div>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private sealed class LoginInput
+    {
+        [Required(ErrorMessage = "Email is required.")]
+        [EmailAddress(ErrorMessage = "Enter a valid email address.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Password is required.")]
+        public string Password { get; set; } = string.Empty;
+    }
+
+    private LoginInput _input = new();
+    private bool _showPassword;
+    private bool _busy;
+
+    private async Task SubmitAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var result = await AuthApi.LoginAsync(new LoginDto(_input.Email, _input.Password));
+
+            if (result.Succeeded && result.Auth is not null)
+            {
+                await AuthState.SignInAsync(result.Auth);
+                Snackbar.Add($"Welcome back, {result.Auth.UserName}!", Severity.Success);
+                Navigation.NavigateTo("/dashboard");
+                return;
+            }
+
+            foreach (var error in result.Errors.Take(3))
+            {
+                Snackbar.Add(error, Severity.Error);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

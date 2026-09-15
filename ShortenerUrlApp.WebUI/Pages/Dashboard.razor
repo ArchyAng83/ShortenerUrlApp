@@ -1,0 +1,298 @@
+@page "/dashboard"
+@attribute [Authorize]
+@inject NavigationManager Navigation
+@inject IDialogService Dialog
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Dashboard — ShortenerUrl</PageTitle>
+
+<div class="d-flex align-center justify-space-between flex-wrap mb-4" style="gap:12px;">
+    <div>
+        <MudText Typo="Typo.h4">My links</MudText>
+        <MudText Typo="Typo.body2">@(CountSummary())</MudText>
+    </div>
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="OpenCreateAsync">
+        Create URL
+    </MudButton>
+</div>
+
+<MudPaper Class="pa-3 mb-3" Elevation="2">
+    <MudTextField @bind-Value="_search"
+                  Immediate="true"
+                  Placeholder="Search by short or long URL…"
+                  Clearable="true"
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  IconSize="Size.Medium"
+                  Margin="Margin.Dense"
+                  Variant="Variant.Outlined"
+                  Class="mt-0" />
+</MudPaper>
+
+<MudTable Items="_urls"
+          Dense="true"
+          Hover="true"
+          Striped="true"
+          FixedHeader="true"
+          Height="62vh"
+          RowsPerPage="10"
+          Loading="_loading"
+          LoadingProgressColor="Color.Primary"
+          Filter="@((UrlResposeDto url) => MatchesSearch(url))">
+    <HeaderContent>
+        <MudTh>
+            <MudTableSortLabel SortBy="new Func<UrlResposeDto, object>(x => UrlHelpers.CodeFromShortUrl(x.ShortUrl))">Short URL</MudTableSortLabel>
+        </MudTh>
+        <MudTh>
+            <MudTableSortLabel SortBy="new Func<UrlResposeDto, object>(x => x.LongUrl)">Long URL</MudTableSortLabel>
+        </MudTh>
+        <MudTh>
+            <MudTableSortLabel SortBy="new Func<UrlResposeDto, object>(x => x.CreateAt)">Created</MudTableSortLabel>
+        </MudTh>
+        <MudTh>
+            <MudTableSortLabel SortBy="new Func<UrlResposeDto, object>(x => x.CountOfClick)">Clicks</MudTableSortLabel>
+        </MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh Style="text-align:right;">Actions</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>
+            <div class="d-flex align-center">
+                <MudLink Href="@context.ShortUrl" Target="_blank" Underline="Underline.Hover" title="Open in new tab">
+                    /@UrlHelpers.CodeFromShortUrl(context.ShortUrl)
+                </MudLink>
+                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                               Size="Size.Small"
+                               title="Copy short URL"
+                               OnClick="@(() => CopyAsync(context.ShortUrl))" />
+            </div>
+        </MudTd>
+        <MudTd Style="max-width:360px;">
+            <div class="text-truncate" title="@context.LongUrl">@context.LongUrl</div>
+        </MudTd>
+        <MudTd>@FormatLocal(context.CreateAt)</MudTd>
+        <MudTd>@ClicksText(context)</MudTd>
+        <MudTd>@StatusChip(context)</MudTd>
+        <MudTd Style="text-align:right;">
+            <div class="d-flex justify-end">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                               Size="Size.Small"
+                               title="Edit destination URL"
+                               OnClick="@(() => OpenEditAsync(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.QrCode2"
+                               Size="Size.Small"
+                               title="QR code"
+                               OnClick="@(() => OpenQrAsync(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Analytics"
+                               Size="Size.Small"
+                               Color="Color.Secondary"
+                               title="Analytics"
+                               OnClick="@(() => Navigation.NavigateTo($"/urls/{context.Id}"))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                               Size="Size.Small"
+                               Color="Color.Error"
+                               title="Delete link"
+                               OnClick="@(() => DeleteAsync(context))" />
+            </div>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <div class="d-flex flex-column align-center py-8">
+            <MudIcon Icon="@Icons.Material.Filled.LinkOff" Size="Size.Large" Color="Color.Default" />
+            <MudText Class="mt-2">@(string.IsNullOrWhiteSpace(_search)
+                ? "No links yet. Click \"Create URL\" to shorten your first one."
+                : "Nothing matches your search.")</MudText>
+        </div>
+    </NoRecordsContent>
+    <PagerContent>
+        <MudTablePager PageSizeOptions="new int[] { 10, 25, 50 }" />
+    </PagerContent>
+</MudTable>
+
+@code {
+    private List<UrlResposeDto> _urls = [];
+    private string _search = string.Empty;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            _urls = await Http.GetFromJsonAsync<List<UrlResposeDto>>("api/ShortenerUrl") ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            Snackbar.Add("Could not load your links.", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string CountSummary() =>
+        _urls.Count == 0
+            ? "No links yet — create your first one."
+            : $"{_urls.Count} link{(_urls.Count == 1 ? "" : "s")} managed · {_urls.Count(u => !u.IsExpired && (u.MaxClicks is null || u.CountOfClick < u.MaxClicks))} active";
+
+    private bool MatchesSearch(UrlResposeDto url)
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            return true;
+        }
+
+        var term = _search.Trim();
+
+        return url.ShortUrl.Contains(term, StringComparison.OrdinalIgnoreCase)
+            || url.LongUrl.Contains(term, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ClicksText(UrlResposeDto url) =>
+        url.MaxClicks is { } max ? $"{url.CountOfClick:N0} / {max:N0}" : $"{url.CountOfClick:N0}";
+
+    /// <summary>
+    /// Status mirrors the redirect behaviour: expiry kills the link outright,
+    /// a reached click cap stops redirects too — everything else is active.
+    /// </summary>
+    private RenderFragment StatusChip(UrlResposeDto url) =>@<text>
+        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(url)">
+            @StatusLabel(url)
+        </MudChip>
+    </text>;
+
+    private static Color StatusColor(UrlResposeDto url) =>
+        url.IsExpired
+            ? Color.Error
+            : url.MaxClicks is { } max && url.CountOfClick >= max
+                ? Color.Warning
+                : Color.Success;
+
+    private static string StatusLabel(UrlResposeDto url) =>
+        url.IsExpired
+            ? "Expired"
+            : url.MaxClicks is { } max && url.CountOfClick >= max
+                ? "Limit reached"
+                : "Active";
+
+    /// <summary>API timestamps are UTC; "Z"-less values are assumed UTC defensively.</summary>
+    private static string FormatLocal(DateTime value)
+    {
+        var utc = value.Kind == DateTimeKind.Utc ? value : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+
+        return utc.ToLocalTime().ToString("dd MMM yyyy, HH:mm");
+    }
+
+    private static DialogOptions CreateOptions() =>
+        new() { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true, CloseOnEscapeKey = false };
+
+    private async Task OpenCreateAsync()
+    {
+        var reference = Dialog.Show<CreateUrlDialog>("Shorten a URL", CreateOptions());
+        var result = await reference.Result;
+
+        if (result is null || result.Canceled)
+        {
+            return;
+        }
+
+        // The create dialog closes with the new short code as result data.
+        var shortCode = result.Data as string;
+
+        if (string.IsNullOrEmpty(shortCode))
+        {
+            return;
+        }
+
+        await ReloadAsync();
+
+        var fullUrl = $"{Http.BaseAddress}{shortCode}";
+
+        Snackbar.Add($"Created <{fullUrl}> — click the copy icon in the table to share it.", Severity.Success);
+    }
+
+    private async Task OpenEditAsync(UrlResposeDto url)
+    {
+        var parameters = new DialogParameters<CreateUrlDialog>
+        {
+            { x => x.Existing, url }
+        };
+
+        var reference = Dialog.Show<CreateUrlDialog>("Edit destination URL", parameters, CreateOptions());
+        var result = await reference.Result;
+
+        if (result is null || result.Canceled)
+        {
+            return;
+        }
+
+        await ReloadAsync();
+    }
+
+    private async Task OpenQrAsync(UrlResposeDto url)
+    {
+        var shortCode = UrlHelpers.CodeFromShortUrl(url.ShortUrl);
+
+        var parameters = new DialogParameters<QRCodeDialog>
+        {
+            { x => x.UrlId, url.Id },
+            { x => x.ShortCode, shortCode }
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true };
+
+        await Dialog.ShowAsync<QRCodeDialog>($"QR code · /{shortCode}", parameters, options);
+    }
+
+    private async Task DeleteAsync(UrlResposeDto url)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Title, "Delete link" },
+            { x => x.Message, $"/{UrlHelpers.CodeFromShortUrl(url.ShortUrl)} will stop redirecting immediately and its analytics will be lost." },
+            { x => x.ConfirmText, "Delete" }
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var reference = Dialog.Show<ConfirmDialog>("Delete link", parameters, options);
+        var confirmed = await reference.Result;
+
+        if (confirmed is null || confirmed.Canceled || confirmed.Data is not true)
+        {
+            return;
+        }
+
+        var response = await Http.DeleteAsync($"api/ShortenerUrl/{url.Id}");
+
+        if (response.IsSuccessStatusCode)
+        {
+            await ReloadAsync();
+            Snackbar.Add("Link deleted.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add($"Delete failed ({(int)response.StatusCode}).", Severity.Error);
+        }
+    }
+
+    private async Task CopyAsync(string shortUrl)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", shortUrl);
+            Snackbar.Add("Short URL copied to clipboard.", Severity.Success);
+        }
+        catch (JSException)
+        {
+            Snackbar.Add("Clipboard access was denied by the browser.", Severity.Warning);
+        }
+    }
+}

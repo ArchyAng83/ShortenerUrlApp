@@ -1,0 +1,132 @@
+@* Fetches the PNG QR rendering of one shortened URL from the API (added in Phase 5)
+   and offers a copy-friendly download. Kept resilient: any failure shows an inline
+   message inside this dialog rather than a snackbar behind it. *@
+@inject IJSRuntime JS
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.QrCode2" Class="mr-2" Color="Color.Primary" />
+            QR code
+        </MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <div class="d-flex flex-column align-center">
+        @if (_loading)
+        {
+            <div class="d-flex flex-column align-center py-8">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+                <MudText Typo="Typo.body2" Class="mt-4">Generating QR code…</MudText>
+            </div>
+        }
+        else if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Warning" Class="my-4" Style="min-width:320px;">@_error</MudAlert>
+        }
+        else
+        {
+            <MudOverlay Visible="_downloading" Absolute="true">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            </MudOverlay>
+
+            <div class="py-4 px-4 rounded-lg" style="background:#fff;">
+                <img src="@_dataUrl"
+                     alt="@($"QR code for {ShortCode}")"
+                     width="256"
+                     height="256"
+                     style="display:block;" />
+            </div>
+            <MudText Typo="Typo.body2" Color="Color.Default" Class="mt-3">
+                Scans open <MudText Typo="Typo.body2" Color="Color.Primary">@ShortCode</MudText>
+            </MudText>
+        }
+        </div>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Close">@(_dataUrl is null ? "Close" : "Done")</MudButton>
+        @if (_dataUrl is not null)
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Download"
+                       Disabled="_downloading || _busy"
+                       OnClick="DownloadAsync">
+                Download
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialogInstance { get; set; } = default!;
+
+    [Parameter] public Guid UrlId { get; set; }
+
+    /// <summary>Short code shown in the caption and used for the download file name.</summary>
+    [Parameter] public string ShortCode { get; set; } = "qr";
+
+    private string? _dataUrl;
+    private string? _error;
+    private bool _loading = true;
+    private bool _downloading;
+    private bool _busy;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The data: URL is only useful in the browser DOM, so the fetch is deferred
+        // until after the first render where JS interop is guaranteed to be available.
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var response = await Http.GetAsync($"api/v1/urls/{UrlId}/qrcode");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                _dataUrl = $"data:image/png;base64,{Convert.ToBase64String(bytes)}";
+            }
+            else
+            {
+                _error = response.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.NotFound => "QR code is not available for this link.",
+                    System.Net.HttpStatusCode.Unauthorized => "Your session expired — please sign in again.",
+                    _ => $"Server returned {(int)response.StatusCode} ({response.StatusCode})."
+                };
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Could not reach the API to generate the QR code.";
+        }
+
+        _loading = false;
+        _busy = false;
+        StateHasChanged();
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (_dataUrl is null || _downloading)
+        {
+            return;
+        }
+
+        _downloading = true;
+
+        // shortenerDownload is defined in wwwroot/js/app.js and always present after boot.
+        await JS.InvokeVoidAsync("shortenerDownload", _dataUrl, $"qr-{ShortCode}.png");
+
+        _downloading = false;
+    }
+
+    private void Close() => MudDialogInstance.Close();
+}
