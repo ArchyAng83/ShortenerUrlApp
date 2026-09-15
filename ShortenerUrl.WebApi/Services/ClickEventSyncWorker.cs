@@ -26,8 +26,14 @@ namespace ShortenerUrlApp.WebApi.Services
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                // Sync interval (1 minute), matching ClickSyncWorker.
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
 
                 using var scope = serviceProvider.CreateScope();
 

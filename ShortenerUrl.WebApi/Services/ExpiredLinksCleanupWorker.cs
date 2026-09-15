@@ -11,7 +11,14 @@ namespace ShortenerUrlApp.WebApi.Services
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                await Task.Delay(Interval, stoppingToken);
+                try
+                {
+                    await Task.Delay(Interval, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
 
                 using var scope = serviceProvider.CreateScope();
                 var service = scope.ServiceProvider.GetRequiredService<IShortenerUrlService>();

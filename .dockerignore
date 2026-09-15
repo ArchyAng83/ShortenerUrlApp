@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.git/
+**/node_modules/
+**/TestResults/
+**/.kilo/
+**/coverage*.xml
+**/coverage*.json
+**/*.md
+!README.md
+**/.env
+**/.env.*
+!.env.example
+**/*.user
+**/*.suo

@@ -7,8 +7,14 @@
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                // Интервал синхронизации (1 минута)
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
 
                 using var scope = serviceProvider.CreateScope();
                 var service = scope.ServiceProvider.GetRequiredService<IShortenerUrlService>();
