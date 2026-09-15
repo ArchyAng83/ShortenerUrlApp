@@ -283,20 +283,21 @@ namespace ShortenerUrlApp.WebApi.Services
                 .Where(u => u.ExpiresAt.HasValue && u.ExpiresAt < now)
                 .ToListAsync(ct);
 
-            if (expired.Count == 0)
-                return 0;
+        if (expired.Count == 0)
+            return 0;
 
-            foreach (var url in expired)
-            {
-                await _cache.KeyDeleteAsync($"url:{url.ShortCode}");
-                await _cache.KeyDeleteAsync($"clicks:{url.ShortCode}");
-                await _cache.KeyDeleteAsync($"click-events:{url.ShortCode}");
-            }
+        context.ShortenerUrls.RemoveRange(expired);
+        await context.SaveChangesAsync(ct);
 
-            context.ShortenerUrls.RemoveRange(expired);
-            await context.SaveChangesAsync(ct);
+        // Evict Redis keys after DB deletion to avoid inconsistency if SaveChangesAsync fails.
+        foreach (var url in expired)
+        {
+            await _cache.KeyDeleteAsync($"url:{url.ShortCode}");
+            await _cache.KeyDeleteAsync($"clicks:{url.ShortCode}");
+            await _cache.KeyDeleteAsync($"click-events:{url.ShortCode}");
+        }
 
-            return expired.Count;
+        return expired.Count;
         }
 
         //Для синхронизации Redis с БД

@@ -17,6 +17,10 @@
                 {
                     await service.SyncClicksToDbAsync(stoppingToken);
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error Sync: {ex.Message}");

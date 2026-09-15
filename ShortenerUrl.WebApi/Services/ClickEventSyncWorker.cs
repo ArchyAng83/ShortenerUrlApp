@@ -35,6 +35,10 @@ namespace ShortenerUrlApp.WebApi.Services
                 {
                     await SyncAsync(scope.ServiceProvider, stoppingToken);
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error ClickEventSync: {ex.Message}");
