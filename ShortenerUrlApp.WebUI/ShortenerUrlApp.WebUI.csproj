@@ -8,10 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.2" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.2" PrivateAssets="all" />
+    <!-- Keep WebAssembly loader packages in sync with the installed SDK (10.0.400).
+         Older 10.0.2 loaders use bare `import("./dotnet.js")`, which breaks against
+         fingerprinted publishes because the SDK no longer emits a plain dotnet.js and
+         only 10.0.11+ asset pipeline injects the index.html import map. -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.11" PrivateAssets="all" />
     <!-- [Authorize] / AuthorizeRouteView support for the standalone WASM client. -->
-    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.11" />
     <PackageReference Include="MudBlazor" Version="7.*" />
     <PackageReference Include="Blazored.LocalStorage" Version="4.*" />
   </ItemGroup>
