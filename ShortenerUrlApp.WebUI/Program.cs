@@ -23,13 +23,18 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<JwtAuthStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<JwtAuthStateProvider>());
 
+builder.Services.AddScoped<AuthService>();
 // A DelegatingHandler must be transient: the scoped HttpClient owns one instance per scope,
 // and the factory-style chain must never be shared as a singleton.
-builder.Services.AddScoped<AuthService>();
 builder.Services.AddTransient<AuthorizationMessageHandler>();
-builder.Services.AddScoped(sp => new HttpClient(sp.GetRequiredService<AuthorizationMessageHandler>())
+builder.Services.AddScoped(sp =>
 {
-    BaseAddress = new Uri(apiBaseUrl)
+    var handler = sp.GetRequiredService<AuthorizationMessageHandler>();
+    handler.InnerHandler = new HttpClientHandler();
+    return new HttpClient(handler)
+    {
+        BaseAddress = new Uri(apiBaseUrl)
+    };
 });
 
 await builder.Build().RunAsync();
