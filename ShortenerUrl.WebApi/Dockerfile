@@ -33,6 +33,7 @@ RUN dotnet test "ShortenerUrlApp.Tests.csproj" -c $BUILD_CONFIGURATION --no-buil
 # Publish
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
+WORKDIR "/src/ShortenerUrl.WebApi"
 RUN dotnet publish "ShortenerUrlApp.WebApi.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
