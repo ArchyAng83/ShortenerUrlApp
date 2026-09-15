@@ -79,7 +79,15 @@ namespace ShortenerUrlApp.WebApi
 
             services.AddScoped<IShortenerUrlService, ShortenerUrlService>();
             services.AddScoped<IAuthService, AuthService>();
+            services.AddScoped<IAnalyticsService, AnalyticsService>();
+
+            // Exposes the current request (IP / User-Agent / Referer) to ShortenerUrlService
+            // so it can buffer click metadata on the redirect path.
+            services.AddHttpContextAccessor();
+
             services.AddHostedService<ClickSyncWorker>();
+            services.AddHostedService<ExpiredLinksCleanupWorker>();
+            services.AddHostedService<ClickEventSyncWorker>();
 
             return services;
         }

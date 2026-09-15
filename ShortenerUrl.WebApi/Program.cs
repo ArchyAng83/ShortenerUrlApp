@@ -40,10 +40,17 @@ app.MapGet("/health", () => Results.Ok("Healthy")).WithName("Health");
 
 app.MapGet("/{code}", async (string code, IShortenerUrlService service, CancellationToken ct) =>
 {
-    // Метод сервиса сначала проверит Redis, что обеспечит высокую скорость
-    var longUrl = await service.GetLongUrlAsync(code, ct);
+    // Метод сервиса сначала проверит Redis, что обеспечит высокую скорость.
+    // Статус-результат отличает несуществующую ссылку (404) от истёкшей или
+    // достигшей лимита кликов (410 Gone).
+    var result = await service.GetLongUrlWithStatusAsync(code, ct);
 
-    return string.IsNullOrEmpty(longUrl) ? Results.NotFound("Url not found!") : Results.Redirect(longUrl);
+    if (result.IsExpired || result.IsLimitReached)
+        return Results.StatusCode(StatusCodes.Status410Gone);
+
+    return result.IsNotFound
+        ? Results.NotFound("Url not found!")
+        : Results.Redirect(result.LongUrl!);
 })
 .WithName("RedirectToLongUrl");
 

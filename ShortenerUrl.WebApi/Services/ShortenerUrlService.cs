@@ -5,13 +5,28 @@ using ShortenerUrlApp.WebApi.Entities;
 using StackExchange.Redis;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace ShortenerUrlApp.WebApi.Services
 {
-    public class ShortenerUrlService(ShortenerUrlDbContext context, IConnectionMultiplexer redis) : IShortenerUrlService
+    // The IHttpContextAccessor parameter is optional so pre-existing construction sites
+    // (and unit tests) keep compiling; DI always supplies it at runtime.
+    public class ShortenerUrlService(
+        ShortenerUrlDbContext context,
+        IConnectionMultiplexer redis,
+        IHttpContextAccessor? httpContextAccessor = null) : IShortenerUrlService
     {
         //Redis для обработки 10к кликов в секунду
         private readonly IDatabase _cache = redis.GetDatabase();
+
+        // Shape of the click-event JSON pushed to the "click-events:{shortCode}" Redis lists.
+        // Field names are camelCased to match the analytics ingestion contract (ClickEventSyncWorker).
+        private sealed record ClickEventMeta(DateTime ClickedAt, string? IpAddress, string? UserAgent, string? Referrer);
+
+        private static readonly JsonSerializerOptions ClickJsonOptions = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
 
         public async Task<bool> DeleteUrlAsync(Guid id, string? userId, CancellationToken ct = default)
         {
@@ -26,6 +41,9 @@ namespace ShortenerUrlApp.WebApi.Services
 
             await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
             await _cache.KeyDeleteAsync($"clicks:{shortenerUrl.ShortCode}");
+            // Drop the pending analytics buffer too, otherwise the sync worker
+            // would keep trying to resolve clicks for a deleted link.
+            await _cache.KeyDeleteAsync($"click-events:{shortenerUrl.ShortCode}");
 
             context.ShortenerUrls.Remove(shortenerUrl);
             await context.SaveChangesAsync(ct);
@@ -42,49 +60,153 @@ namespace ShortenerUrlApp.WebApi.Services
 
         public async Task<string> GetLongUrlAsync(string shortCode, CancellationToken ct = default)
         {
+            // Compatibility wrapper for callers that only need the URL (null when unresolvable).
+            var result = await GetLongUrlWithStatusAsync(shortCode, ct);
+            return result.LongUrl!;
+        }
+
+        public async Task<RedirectResult> GetLongUrlWithStatusAsync(string shortCode, CancellationToken ct = default)
+        {
             // Public redirect path: no ownership check, the short code is the capability.
             string? cachedUrl = await _cache.StringGetAsync($"url:{shortCode}");
 
             if (!string.IsNullOrEmpty(cachedUrl))
             { 
                 // This does not block the PostgreSQL database at 10k requests per second.
+                // Links with a click cap are never cached (a cached snapshot cannot track live
+                // click counts), and a cached entry's TTL ends no later than ExpiresAt,
+                // so a cache hit is always safe to redirect.
                 _ = _cache.StringIncrementAsync($"clicks:{shortCode}");
-                return cachedUrl;
+                QueueClickEvent(shortCode);
+                return RedirectResult.Redirect(cachedUrl);
             }
 
-
             var shortenerUrl = await context.ShortenerUrls
-                .FirstOrDefaultAsync(u => u.ShortCode == shortCode, ct); ;
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.ShortCode == shortCode, ct);
 
             if (shortenerUrl is null)
-                return null!;
+                return RedirectResult.NotFound();
 
-            await _cache.StringSetAsync($"url:{shortCode}", shortenerUrl.LongUrl, TimeSpan.FromDays(1));
+            var now = DateTime.UtcNow;
+
+            if (shortenerUrl.ExpiresAt.HasValue && shortenerUrl.ExpiresAt < now)
+                return RedirectResult.Expired();
+
+            // Counted clicks are flushed to PostgreSQL only every minute, so the pending
+            // Redis counter must be included for the MaxClicks cap to be accurate.
+            if (shortenerUrl.MaxClicks.HasValue)
+            {
+                RedisValue pendingClicks = await _cache.StringGetAsync($"clicks:{shortCode}");
+                long totalClicks = shortenerUrl.CountOfClick +
+                                   (pendingClicks.HasValue ? (long)pendingClicks : 0);
+
+                if (totalClicks >= shortenerUrl.MaxClicks.Value)
+                    return RedirectResult.LimitReached();
+            }
 
             _ = await _cache.StringIncrementAsync($"clicks:{shortCode}");
 
-            return shortenerUrl.LongUrl;
+            // Cache only uncapped links; the TTL is clamped so the entry dies at ExpiresAt.
+            if (!shortenerUrl.MaxClicks.HasValue)
+            {
+                var ttl = TimeSpan.FromDays(1);
+
+                if (shortenerUrl.ExpiresAt.HasValue)
+                {
+                    var remaining = shortenerUrl.ExpiresAt.Value - now;
+                    if (remaining < ttl)
+                        ttl = remaining;
+                }
+
+                if (ttl > TimeSpan.Zero)
+                    await _cache.StringSetAsync($"url:{shortCode}", shortenerUrl.LongUrl, ttl);
+            }
+
+            // Count a click only when the redirect actually happens (expired/capped links above exit early).
+            QueueClickEvent(shortCode);
+
+            return RedirectResult.Redirect(shortenerUrl.LongUrl);
         }
 
-        public async Task<string> ShortenUrlAsync(string longUrl, string? userId, CancellationToken ct = default)
+        // Captures click metadata as JSON into the "click-events:{shortCode}" Redis list.
+        // Fire-and-forget on purpose: analytics logging must never slow down or fail the redirect.
+        private void QueueClickEvent(string shortCode)
+        {
+            HttpContext? httpContext = httpContextAccessor?.HttpContext;
+            HttpRequest? request = httpContext?.Request;
+
+            var meta = new ClickEventMeta(
+                DateTime.UtcNow,
+                httpContext?.Connection.RemoteIpAddress?.ToString(),
+                Nullify(request?.Headers.UserAgent.ToString()),
+                // Note the HTTP "Referer" header spelling.
+                Nullify(request?.Headers.Referer.ToString()));
+
+            string json = JsonSerializer.Serialize(meta, ClickJsonOptions);
+
+            _ = _cache.ListLeftPushAsync($"click-events:{shortCode}", json);
+        }
+
+        private static string? Nullify(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+        // Legacy overload: random code, no alias, no expiry, no click cap.
+        public Task<string> ShortenUrlAsync(string longUrl, string? userId, CancellationToken ct) =>
+            ShortenUrlAsync(longUrl, userId, null, null, null, ct);
+
+        public async Task<string> ShortenUrlAsync(
+            string longUrl,
+            string? userId,
+            string? customAlias = null,
+            int? expiresInMinutes = null,
+            int? maxClicks = null,
+            CancellationToken ct = default)
         {
             string code;
+            var isCustomAlias = !string.IsNullOrWhiteSpace(customAlias);
 
-            do
+            if (isCustomAlias)
             {
-                code = GenerateCode();
+                code = customAlias!.Trim();
+
+                if (await context.ShortenerUrls.AnyAsync(u => u.ShortCode == code, ct))
+                {
+                    throw new AliasAlreadyInUseException(code);
+                }
             }
-            while (await context.ShortenerUrls.AnyAsync(u => u.ShortCode == code, ct));
+            else
+            {
+                do
+                {
+                    code = GenerateCode();
+                }
+                while (await context.ShortenerUrls.AnyAsync(u => u.ShortCode == code, ct));
+            }
 
             var shotenerUrl = new ShortenerUrl()
             {
                 LongUrl = longUrl,
                 ShortCode = code,
-                UserId = userId
+                UserId = userId,
+                IsCustomAlias = isCustomAlias,
+                ExpiresAt = expiresInMinutes.HasValue
+                    ? DateTime.UtcNow.AddMinutes(expiresInMinutes.Value)
+                    : null,
+                MaxClicks = maxClicks
             };
 
             context.ShortenerUrls.Add(shotenerUrl);
-            await context.SaveChangesAsync(ct);
+
+            try
+            {
+                await context.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException) when (isCustomAlias)
+            {
+                // Lost the race for the same alias to another request; the unique
+                // index on ShortCode is the source of truth here.
+                throw new AliasAlreadyInUseException(code);
+            }
 
             return code;
         }
@@ -106,6 +228,30 @@ namespace ShortenerUrlApp.WebApi.Services
             await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
 
             return true;
+        }
+
+        public async Task<int> DeleteExpiredUrlsAsync(CancellationToken ct = default)
+        {
+            var now = DateTime.UtcNow;
+
+            var expired = await context.ShortenerUrls
+                .Where(u => u.ExpiresAt.HasValue && u.ExpiresAt < now)
+                .ToListAsync(ct);
+
+            if (expired.Count == 0)
+                return 0;
+
+            foreach (var url in expired)
+            {
+                await _cache.KeyDeleteAsync($"url:{url.ShortCode}");
+                await _cache.KeyDeleteAsync($"clicks:{url.ShortCode}");
+                await _cache.KeyDeleteAsync($"click-events:{url.ShortCode}");
+            }
+
+            context.ShortenerUrls.RemoveRange(expired);
+            await context.SaveChangesAsync(ct);
+
+            return expired.Count;
         }
 
         //Для синхронизации Redis с БД
