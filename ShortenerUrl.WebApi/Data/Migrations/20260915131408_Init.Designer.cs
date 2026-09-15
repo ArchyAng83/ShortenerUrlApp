@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using ShortenerUrlApp.WebApi.Data;
 
 #nullable disable
@@ -11,7 +12,7 @@ using ShortenerUrlApp.WebApi.Data;
 namespace ShortenerUrlApp.WebApi.Data.Migrations
 {
     [DbContext(typeof(ShortenerUrlDbContext))]
-    [Migration("20260214213311_Init")]
+    [Migration("20260915131408_Init")]
     partial class Init
     {
         /// <inheritdoc />
@@ -19,36 +20,38 @@ namespace ShortenerUrlApp.WebApi.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.3")
-                .HasAnnotation("Relational:MaxIdentifierLength", 64);
+                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("Relational:MaxIdentifierLength", 63);
+
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("ShortenerUrlApp.WebApi.Entities.ShortenerUrl", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("char(36)");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("CountOfClick")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("CreateAt")
-                        .HasColumnType("datetime(6)");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("LongUrl")
                         .IsRequired()
-                        .HasColumnType("longtext");
+                        .HasColumnType("text");
 
                     b.Property<string>("ShortCode")
                         .IsRequired()
                         .HasMaxLength(7)
-                        .HasColumnType("varchar(7)");
+                        .HasColumnType("character varying(7)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("ShortCode")
                         .IsUnique();
 
-                    b.ToTable("SortenerUrls");
+                    b.ToTable("ShortenerUrls", (string)null);
                 });
 #pragma warning restore 612, 618
         }

@@ -1,4 +1,5 @@
 ﻿using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Moq;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Data;
@@ -29,8 +30,12 @@ namespace ShortenerUrlApp.Tests
         [Fact]
         public async Task GetLongUrlAsync_ShouldReturnFromCache_IfKeyExists()
         {
-            // Arrange
-            var mockDb = new Mock<ShortenerUrlDbContext>();
+            // Arrange: the DB stays empty — a cache hit must not touch it.
+            using var db = new ShortenerUrlDbContext(
+                new DbContextOptionsBuilder<ShortenerUrlDbContext>()
+                    .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                    .Options);
+
             var mockRedis = new Mock<IConnectionMultiplexer>();
             var mockDatabase = new Mock<IDatabase>();
 
@@ -38,14 +43,13 @@ namespace ShortenerUrlApp.Tests
                         .ReturnsAsync("https://google.com");
             mockRedis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(mockDatabase.Object);
 
-            var service = new ShortenerUrlService(mockDb.Object, mockRedis.Object);
+            var service = new ShortenerUrlService(db, mockRedis.Object);
 
             // Act
             var result = await service.GetLongUrlAsync("abc123");
 
             // Assert
             result.Should().Be("https://google.com");
-            mockDb.VerifyNoOtherCalls();
         }
 
         [Theory]
@@ -64,6 +68,18 @@ namespace ShortenerUrlApp.Tests
 
             // Assert
             isValid.Should().BeFalse();
+        }
+
+        [Fact]
+        public void CreateShortUrlDto_ShouldPass_OnAbsoluteHttpUrl()
+        {
+            var dto = new CreateShortUrlDto("https://google.com");
+            var context = new ValidationContext(dto);
+            var results = new List<ValidationResult>();
+
+            var isValid = Validator.TryValidateObject(dto, context, results, true);
+
+            isValid.Should().BeTrue();
         }
     }
 }

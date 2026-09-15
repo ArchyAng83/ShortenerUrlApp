@@ -1,0 +1,103 @@
+# CI pipeline for ShortenerUrlApp
+# Builds the solution (.NET 10 preview), runs xUnit tests, uploads test results,
+# and verifies that the API Docker image can be built (build only, no push).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Start the workflow only once so it runs cleanly
+# Cancel older in-progress runs for the same branch/PR to save runner time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Sensible defaults for the dotnet CLI on CI runners
+env:
+  DOTNET_NOLOGO: true                    # Cleaner build logs
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true # No one-time NuGet cert download
+  DOTNET_CLI_TELEMETRY_OPTOUT: true       # Disable CI telemetry
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Job 1: restore, build and test the whole solution
+  # ─────────────────────────────────────────────────────────────
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      # .NET 10 is still in preview — include-prerelease is required
+      # (setup-dotnet@v4 caches NuGet packages by default)
+      - name: Setup .NET 10.0 (preview)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          include-prerelease: true
+
+      - name: Restore dependencies
+        run: dotnet restore ShortenerUrlApp.slnx
+
+      # Build everything in Release: WebApi, Shared, WebUI (Blazor WASM), Tests
+      # --no-restore reuses the packages restored in the previous step
+      - name: Build solution
+        run: dotnet build ShortenerUrlApp.slnx --configuration Release --no-restore
+
+      # Run all tests from the solution; TRX results land in TestResults/
+      # so they can be attached as an artifact even when tests fail
+      - name: Run tests
+        run: >
+          dotnet test ShortenerUrlApp.slnx
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
+
+      # Upload test results regardless of outcome (helps debug failures)
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TestResults/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 2: verify the API Docker image builds
+  # (build only — no registry login and no push)
+  # ─────────────────────────────────────────────────────────────
+  docker:
+    name: Docker build (API)
+    runs-on: ubuntu-latest
+    needs: build  # Only build the image if the solution compiled and tests passed
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      # BuildKit with GitHub Actions cache support
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # The Dockerfile expects the repository root as build context
+      # (its COPY paths are project folders relative to the solution root)
+      - name: Build API image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ShortenerUrl.WebApi/Dockerfile
+          push: false
+          load: true  # Load the image into the local Docker daemon for verification
+          tags: |
+            shortener-url-api:ci
+            shortener-url-api:${{ github.sha }}
+          # Reuse layers between CI runs to speed up the build
+          cache-from: type=gha,scope=api-image
+          cache-to: type=gha,mode=max,scope=api-image

@@ -13,33 +13,41 @@ namespace ShortenerUrlApp.WebApi.Services
         //Redis для обработки 10к кликов в секунду
         private readonly IDatabase _cache = redis.GetDatabase();
 
-        public async Task DeleteUrlAsync(Guid id, CancellationToken ct = default)
+        public async Task<bool> DeleteUrlAsync(Guid id, string? userId, CancellationToken ct = default)
         {
-            var shortenerUrl = await context.ShortenerUrls.FindAsync(id, ct);
+            var shortenerUrl = await context.ShortenerUrls
+                .FirstOrDefaultAsync(u => u.Id == id, ct);
 
-            if (shortenerUrl is not null)
+            // Treat foreign URLs as "not found" so the API does not leak their existence.
+            if (shortenerUrl is null || shortenerUrl.UserId != userId)
             {
-                await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
-                await _cache.KeyDeleteAsync($"clicks:{shortenerUrl.ShortCode}");
-
-                context.ShortenerUrls.Remove(shortenerUrl);
-                await context.SaveChangesAsync(ct);
+                return false;
             }
+
+            await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
+            await _cache.KeyDeleteAsync($"clicks:{shortenerUrl.ShortCode}");
+
+            context.ShortenerUrls.Remove(shortenerUrl);
+            await context.SaveChangesAsync(ct);
+
+            return true;
         }
 
-        public async Task<List<ShortenerUrl>> GetAllUrlsAsync(CancellationToken ct = default) =>
+        public async Task<List<ShortenerUrl>> GetAllUrlsAsync(string? userId, CancellationToken ct = default) =>
             await context.ShortenerUrls
                             .AsNoTracking()
+                            .Where(u => u.UserId == userId) // PostgreSQL string equality is case-sensitive, same as C#
                             .OrderByDescending(u => u.CreateAt)
                             .ToListAsync(ct);
 
         public async Task<string> GetLongUrlAsync(string shortCode, CancellationToken ct = default)
         {
+            // Public redirect path: no ownership check, the short code is the capability.
             string? cachedUrl = await _cache.StringGetAsync($"url:{shortCode}");
 
             if (!string.IsNullOrEmpty(cachedUrl))
             { 
-                // Это не блокирует базу данных MySQL при 10к запросах в секунду.
+                // This does not block the PostgreSQL database at 10k requests per second.
                 _ = _cache.StringIncrementAsync($"clicks:{shortCode}");
                 return cachedUrl;
             }
@@ -58,7 +66,7 @@ namespace ShortenerUrlApp.WebApi.Services
             return shortenerUrl.LongUrl;
         }
 
-        public async Task<string> ShortenUrlAsync(string longUrl, CancellationToken ct = default)
+        public async Task<string> ShortenUrlAsync(string longUrl, string? userId, CancellationToken ct = default)
         {
             string code;
 
@@ -71,7 +79,8 @@ namespace ShortenerUrlApp.WebApi.Services
             var shotenerUrl = new ShortenerUrl()
             {
                 LongUrl = longUrl,
-                ShortCode = code
+                ShortCode = code,
+                UserId = userId
             };
 
             context.ShortenerUrls.Add(shotenerUrl);
@@ -80,17 +89,23 @@ namespace ShortenerUrlApp.WebApi.Services
             return code;
         }
 
-        public async Task UpdateUrlAsync(Guid id, string newLongUrl, CancellationToken ct = default)
+        public async Task<bool> UpdateUrlAsync(Guid id, string newLongUrl, string? userId, CancellationToken ct = default)
         {
-            var shortenerUrl = await context.ShortenerUrls.FindAsync(id, ct);
+            var shortenerUrl = await context.ShortenerUrls
+                .FirstOrDefaultAsync(u => u.Id == id, ct);
 
-            if (shortenerUrl is not null)
+            // Treat foreign URLs as "not found" so the API does not leak their existence.
+            if (shortenerUrl is null || shortenerUrl.UserId != userId)
             {
-                shortenerUrl.LongUrl = newLongUrl;
-                await context.SaveChangesAsync(ct);
-
-                await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
+                return false;
             }
+
+            shortenerUrl.LongUrl = newLongUrl;
+            await context.SaveChangesAsync(ct);
+
+            await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
+
+            return true;
         }
 
         //Для синхронизации Redis с БД

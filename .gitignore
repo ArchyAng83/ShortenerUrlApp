@@ -356,8 +356,15 @@ healthchecksdb
 # Backup folder for Package Reference Convert tool in Visual Studio 2017
 MigrationBackup/
 
-# Ionide (cross platform F# VS Code tools) working folder
-.ionide/
+# .env files
+.env
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Kilo AI agent config
+.kilo/
+
+# Project management files (internal)
+AGENTS.md
+todo.md

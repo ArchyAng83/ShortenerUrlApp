@@ -1,9 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Services;
+using System.Security.Claims;
 
 namespace ShortenerUrlApp.WebApi.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class ShortenerUrlController(IShortenerUrlService shortenerService) : ControllerBase
@@ -11,7 +14,7 @@ namespace ShortenerUrlApp.WebApi.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAllUrlsAsync(CancellationToken ct)
         {
-            var shortenerUrls = await shortenerService.GetAllUrlsAsync(ct);
+            var shortenerUrls = await shortenerService.GetAllUrlsAsync(GetUserId(), ct);
 
             var response = shortenerUrls.Select(u => new UrlResposeDto(
                 u.Id,
@@ -31,7 +34,7 @@ namespace ShortenerUrlApp.WebApi.Controllers
                 return BadRequest("Invalid reference!");
             }
 
-            var code = await shortenerService.ShortenUrlAsync(shortUrlDto.LongUrl, ct);
+            var code = await shortenerService.ShortenUrlAsync(shortUrlDto.LongUrl, GetUserId(), ct);
 
             return Ok(code);
         }
@@ -44,18 +47,22 @@ namespace ShortenerUrlApp.WebApi.Controllers
                 return BadRequest("Invalid reference!");
             }
 
-            await shortenerService.UpdateUrlAsync(longUrlDto.Id, longUrlDto.LongUrl, ct);
+            var updated = await shortenerService.UpdateUrlAsync(longUrlDto.Id, longUrlDto.LongUrl, GetUserId(), ct);
 
-            return Ok(longUrlDto);
+            return updated ? Ok(longUrlDto) : NotFound();
         }
 
         [HttpDelete("{id:guid}")]
         public async Task<IActionResult> DeleteUrlAsync(Guid id, CancellationToken ct)
         {
-            await shortenerService.DeleteUrlAsync(id, ct);
+            var deleted = await shortenerService.DeleteUrlAsync(id, GetUserId(), ct);
 
-            return NoContent();
+            return deleted ? NoContent() : NotFound();
         }
+
+        // NameIdentifier covers the mapped "sub" claim; "sub" covers MapInboundClaims=false.
+        private string? GetUserId() =>
+            User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
 
         private static bool CheckUrl(string longUrl)
         {

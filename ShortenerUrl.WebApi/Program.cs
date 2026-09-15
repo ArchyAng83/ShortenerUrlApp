@@ -26,11 +26,17 @@ if (app.Environment.IsDevelopment())
 
 //app.UseHttpsRedirection();
 
+// CORS before auth so preflight OPTIONS requests are not rejected with 401.
+app.UseCors();
+
+// Authentication must run before authorization.
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
-app.UseCors();
+// Used by the docker-compose health check; the literal segment wins over the /{code} redirect route.
+app.MapGet("/health", () => Results.Ok("Healthy")).WithName("Health");
 
 app.MapGet("/{code}", async (string code, IShortenerUrlService service, CancellationToken ct) =>
 {

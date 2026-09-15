@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: shortener-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-UrlShortenerDb}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - shortener-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: shortener-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - shortener-net
+
+  api:
+    build:
+      context: .
+      dockerfile: ShortenerUrl.WebApi/Dockerfile
+    container_name: shortener-api
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB:-UrlShortenerDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-your_secure_password}
+      - ConnectionStrings__Redis=redis:6379
+      - JwtSettings__Secret=${JWT_SECRET:-your-super-secret-key-minimum-32-characters-long}
+      - JwtSettings__Issuer=${JWT_ISSUER:-ShortenerUrlApp}
+      - JwtSettings__Audience=${JWT_AUDIENCE:-ShortenerUrlApp}
+      - JwtSettings__ExpiryMinutes=${JWT_EXPIRY_MINUTES:-60}
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Development}
+    ports:
+      - "${API_PORT:-5153}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - shortener-net
+
+  ui:
+    build:
+      context: .
+      dockerfile: ShortenerUrlApp.WebUI/Dockerfile
+    container_name: shortener-ui
+    ports:
+      - "${UI_PORT:-5209}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - shortener-net
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  shortener-net:
+    driver: bridge
