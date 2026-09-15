@@ -18,6 +18,7 @@ builder.Services.AddMudServices();
 
 // JWT-backed auth state for [Authorize] / <AuthorizeView>: the concrete provider is also
 // registered as AuthenticationStateProvider, and the cascading state feeds the components.
+builder.Services.AddAuthorizationCore();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<JwtAuthStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<JwtAuthStateProvider>());
