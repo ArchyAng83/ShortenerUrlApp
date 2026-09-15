@@ -3,6 +3,12 @@ using ShortenerUrlApp.Shared.Validation;
 
 namespace ShortenerUrlApp.Shared.DTOs
 {
-    public record UpdateLongUrlDto(Guid Id, [property: Required][property: HttpUrl] string LongUrl);
+    // Class with init properties, same reasoning as CreateShortUrlDto.
+    public class UpdateLongUrlDto
+    {
+        public Guid Id { get; init; }
 
+        [Required][HttpUrl]
+        public string? LongUrl { get; init; }
+    }
 }

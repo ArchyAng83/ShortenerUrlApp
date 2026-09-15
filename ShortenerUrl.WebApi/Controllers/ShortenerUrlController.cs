@@ -45,7 +45,9 @@ namespace ShortenerUrlApp.WebApi.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateShortUrlAsync([FromBody] CreateShortUrlDto shortUrlDto, CancellationToken ct)
         {
-            if (!CheckUrl(shortUrlDto.LongUrl))
+            // LongUrl is [Required], so a null never survives model binding; the guard
+            // keeps the nullable annotation honest and defensive.
+            if (shortUrlDto.LongUrl is null || !CheckUrl(shortUrlDto.LongUrl))
             {
                 return BadRequest("Invalid reference!");
             }
@@ -88,7 +90,7 @@ namespace ShortenerUrlApp.WebApi.Controllers
         [HttpPut]
         public async Task<IActionResult> UpdateLongUrlAsync([FromBody] UpdateLongUrlDto longUrlDto, CancellationToken ct)
         {
-            if (!CheckUrl(longUrlDto.LongUrl))
+            if (longUrlDto.LongUrl is null || !CheckUrl(longUrlDto.LongUrl))
             {
                 return BadRequest("Invalid reference!");
             }

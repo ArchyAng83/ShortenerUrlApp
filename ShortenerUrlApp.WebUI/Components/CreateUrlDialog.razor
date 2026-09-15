@@ -160,8 +160,9 @@
                 var expires = _expiresInMinutes is > 0 ? _expiresInMinutes : null;
                 var clicks = _maxClicks is > 0 ? _maxClicks : null;
 
-                var dto = new CreateShortUrlDto(_model.LongUrl.Trim())
+                var dto = new CreateShortUrlDto
                 {
+                    LongUrl = _model.LongUrl.Trim(),
                     CustomAlias = alias,
                     ExpiresInMinutes = expires,
                     MaxClicks = clicks
@@ -183,7 +184,7 @@
                 return;
             }
 
-            var updateDto = new UpdateLongUrlDto(Existing!.Id, _model.LongUrl.Trim());
+            var updateDto = new UpdateLongUrlDto { Id = Existing!.Id, LongUrl = _model.LongUrl.Trim() };
             var updateResponse = await Http.PutAsJsonAsync("api/ShortenerUrl", updateDto);
 
             if (!updateResponse.IsSuccessStatusCode)

@@ -59,7 +59,10 @@ namespace ShortenerUrlApp.Tests
         public void CreateShortUrlDto_ShouldFail_OnInvalidUrl(string badUrl)
         {
             // Arrange
-            var dto = new CreateShortUrlDto(badUrl);
+            // CreateShortUrlDto/UpdateLongUrlDto are classes with validated init properties:
+            // positional records break ASP.NET Core MVC complex-object validation
+            // ("Record type ... has validation metadata defined on property ...").
+            var dto = new CreateShortUrlDto { LongUrl = badUrl };
             var context = new ValidationContext(dto);
             var results = new List<ValidationResult>();
 
@@ -73,7 +76,7 @@ namespace ShortenerUrlApp.Tests
         [Fact]
         public void CreateShortUrlDto_ShouldPass_OnAbsoluteHttpUrl()
         {
-            var dto = new CreateShortUrlDto("https://google.com");
+            var dto = new CreateShortUrlDto { LongUrl = "https://google.com" };
             var context = new ValidationContext(dto);
             var results = new List<ValidationResult>();
 

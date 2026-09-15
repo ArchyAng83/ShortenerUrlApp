@@ -3,10 +3,16 @@ using ShortenerUrlApp.Shared.Validation;
 
 namespace ShortenerUrlApp.Shared.DTOs
 {
-    // "property:" target is required on positional records: attributes on the bare parameter
-    // are not visible to Validator/ModelState and would be silently ignored.
-    public record CreateShortUrlDto([property: Required][property: HttpUrl] string LongUrl)
+    // Plain class (not a positional record) on purpose: ASP.NET Core MVC throws
+    // "Record type ... has validation metadata defined on property ... that will be ignored"
+    // during complex-object validation when a positional record carries attributes via
+    // [property:], and bare positional parameters are invisible to Validator.TryValidateObject
+    // (used by unit tests). Init-only validated properties satisfy both consumers.
+    public class CreateShortUrlDto
     {
+        [Required][HttpUrl]
+        public string? LongUrl { get; init; }
+
         // Optional user-chosen short code. Null/empty means "generate a random one".
         [StringLength(20, MinimumLength = 3, ErrorMessage = "Alias must be 3-20 characters long")]
         [RegularExpression(@"^[a-zA-Z0-9_-]+$", ErrorMessage = "Only alphanumeric, hyphens and underscores")]

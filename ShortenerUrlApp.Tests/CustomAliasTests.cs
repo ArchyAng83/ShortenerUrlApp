@@ -138,7 +138,7 @@ namespace ShortenerUrlApp.Tests
         [InlineData("a]]b")]                 // invalid chars
         public void CreateShortUrlDto_ShouldFail_OnInvalidAlias(string alias)
         {
-            var dto = new CreateShortUrlDto("https://example.com") { CustomAlias = alias };
+            var dto = new CreateShortUrlDto { LongUrl = "https://example.com", CustomAlias = alias };
             var context = new ValidationContext(dto);
             var results = new List<ValidationResult>();
 
@@ -153,7 +153,7 @@ namespace ShortenerUrlApp.Tests
         [InlineData("MyAl1as")]              // case-sensitive alphanumerics
         public void CreateShortUrlDto_ShouldPass_OnValidAlias(string alias)
         {
-            var dto = new CreateShortUrlDto("https://example.com") { CustomAlias = alias };
+            var dto = new CreateShortUrlDto { LongUrl = "https://example.com", CustomAlias = alias };
             var context = new ValidationContext(dto);
             var results = new List<ValidationResult>();
 
@@ -167,7 +167,7 @@ namespace ShortenerUrlApp.Tests
         [InlineData(525601)] // max is 525600 (one year in minutes)
         public void CreateShortUrlDto_ShouldFail_OnOutOfRangeExpiration(int minutes)
         {
-            var dto = new CreateShortUrlDto("https://example.com") { ExpiresInMinutes = minutes };
+            var dto = new CreateShortUrlDto { LongUrl = "https://example.com", ExpiresInMinutes = minutes };
             var context = new ValidationContext(dto);
             var results = new List<ValidationResult>();
 
@@ -178,7 +178,7 @@ namespace ShortenerUrlApp.Tests
         [Fact]
         public void CreateShortUrlDto_ShouldFail_OnNonPositiveMaxClicks()
         {
-            var dto = new CreateShortUrlDto("https://example.com") { MaxClicks = 0 };
+            var dto = new CreateShortUrlDto { LongUrl = "https://example.com", MaxClicks = 0 };
             var context = new ValidationContext(dto);
             var results = new List<ValidationResult>();
 
