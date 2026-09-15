@@ -5,9 +5,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 # Start the workflow only once so it runs cleanly
 # Cancel older in-progress runs for the same branch/PR to save runner time
