@@ -35,9 +35,16 @@ namespace ShortenerUrlApp.WebApi
             // require Redis to be reachable until the first cache access.
             services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
 
+            // Allowed browser origins come from configuration ('Cors:AllowedOrigins' in appsettings
+            // or Cors__AllowedOrigins__N env vars); the fallback covers the docker UI and the dev server.
+            var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+                is { Length: > 0 } configured
+                    ? configured
+                    : ["http://localhost:5209", "https://localhost:7159"];
+
             services.AddCors(options => {
                 options.AddDefaultPolicy(policy =>
-                    policy.WithOrigins("https://localhost:7159")
+                    policy.WithOrigins(allowedOrigins)
                           .AllowAnyMethod()
                           .AllowAnyHeader());
             });

@@ -41,6 +41,8 @@ services:
       dockerfile: ShortenerUrl.WebApi/Dockerfile
     container_name: shortener-api
     environment:
+      # Keep CORS in sync with the published UI port/origin (index 0 of Cors:AllowedOrigins).
+      - Cors__AllowedOrigins__0=${UI_ORIGIN:-http://localhost:${UI_PORT:-5209}}
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB:-UrlShortenerDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-your_secure_password}
       - ConnectionStrings__Redis=redis:6379
       - JwtSettings__Secret=${JWT_SECRET:-your-super-secret-key-minimum-32-characters-long}
