@@ -49,6 +49,8 @@ namespace ShortenerUrlApp.WebApi.Services
             var db = redis.GetDatabase();
 
             var server = redis.GetServer(redis.GetEndPoints()[0]);
+            // IServer.Keys() streams matching keys with SCAN under the hood; IServer.Scan
+            // does not exist as a public API in StackExchange.Redis 2.11.
             var keys = server.Keys(pattern: $"{KeyPrefix}*").ToList();
 
             if (keys.Count == 0)
@@ -68,11 +70,18 @@ namespace ShortenerUrlApp.WebApi.Services
                 // Read + delete are queued in one MULTI/EXEC transaction,
                 // so no click appended mid-drain can get lost.
                 ITransaction transaction = db.CreateTransaction();
-                Task<RedisValue[]> rangeTask = transaction.ListRangeAsync(key);
+                var rangeTask = transaction.ListRangeAsync(key);
+                // Queued for MULTI/EXEC: must NOT be awaited before ExecuteAsync,
+                // the discard only suppresses CS4014.
                 _ = transaction.KeyDeleteAsync(key);
 
                 if (!await transaction.ExecuteAsync())
-                    continue; // CONCURRENTWRITE conflict — the next tick will retry this key.
+                {
+                    // CONCURRENTWRITE conflict — consume the rangeTask to avoid
+                    // abandoning the task, then retry this key on the next tick.
+                    _ = await rangeTask;
+                    continue;
+                }
 
                 var shortCode = key.ToString()[KeyPrefix.Length..];
 
@@ -114,7 +123,7 @@ namespace ShortenerUrlApp.WebApi.Services
             {
                 return JsonSerializer.Deserialize<ClickEventMeta>(value.ToString()!, JsonOptions);
             }
-            catch (JsonException)
+            catch (Exception)
             {
                 // Malformed or foreign-format entry (e.g. left over from an older deploy) — skip it.
                 return null;

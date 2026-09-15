@@ -39,14 +39,21 @@ namespace ShortenerUrlApp.WebApi.Services
                 return false;
             }
 
-            await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
-            await _cache.KeyDeleteAsync($"clicks:{shortenerUrl.ShortCode}");
-            // Drop the pending analytics buffer too, otherwise the sync worker
-            // would keep trying to resolve clicks for a deleted link.
-            await _cache.KeyDeleteAsync($"click-events:{shortenerUrl.ShortCode}");
-
             context.ShortenerUrls.Remove(shortenerUrl);
             await context.SaveChangesAsync(ct);
+
+            // Evict Redis keys after DB deletion to avoid inconsistency if SaveChangesAsync fails.
+            // Cache deletion failures are non-critical; the DB is the source of truth.
+            try
+            {
+                await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
+                await _cache.KeyDeleteAsync($"clicks:{shortenerUrl.ShortCode}");
+                await _cache.KeyDeleteAsync($"click-events:{shortenerUrl.ShortCode}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Cache eviction failed for {shortenerUrl.ShortCode}: {ex.Message}");
+            }
 
             return true;
         }
@@ -71,12 +78,13 @@ namespace ShortenerUrlApp.WebApi.Services
             string? cachedUrl = await _cache.StringGetAsync($"url:{shortCode}");
 
             if (!string.IsNullOrEmpty(cachedUrl))
-            { 
+            {
                 // This does not block the PostgreSQL database at 10k requests per second.
                 // Links with a click cap are never cached (a cached snapshot cannot track live
                 // click counts), and a cached entry's TTL ends no later than ExpiresAt,
                 // so a cache hit is always safe to redirect.
-                _ = _cache.StringIncrementAsync($"clicks:{shortCode}");
+                _ = _cache.StringIncrementAsync($"clicks:{shortCode}")
+                    .ContinueWith(t => { if (t.IsFaulted) Console.WriteLine($"Click increment failed: {t.Exception?.InnerException?.Message}"); });
                 QueueClickEvent(shortCode);
                 return RedirectResult.Redirect(cachedUrl);
             }
@@ -131,21 +139,29 @@ namespace ShortenerUrlApp.WebApi.Services
 
         // Captures click metadata as JSON into the "click-events:{shortCode}" Redis list.
         // Fire-and-forget on purpose: analytics logging must never slow down or fail the redirect.
-        private void QueueClickEvent(string shortCode)
+        private async void QueueClickEvent(string shortCode)
         {
-            HttpContext? httpContext = httpContextAccessor?.HttpContext;
-            HttpRequest? request = httpContext?.Request;
+            try
+            {
+                HttpContext? httpContext = httpContextAccessor?.HttpContext;
+                HttpRequest? request = httpContext?.Request;
 
-            var meta = new ClickEventMeta(
-                DateTime.UtcNow,
-                httpContext?.Connection.RemoteIpAddress?.ToString(),
-                Nullify(request?.Headers.UserAgent.ToString()),
-                // Note the HTTP "Referer" header spelling.
-                Nullify(request?.Headers.Referer.ToString()));
+                var meta = new ClickEventMeta(
+                    DateTime.UtcNow,
+                    httpContext?.Connection.RemoteIpAddress?.ToString(),
+                    Nullify(request?.Headers.UserAgent.ToString()),
+                    // Note the HTTP "Referer" header spelling.
+                    Nullify(request?.Headers.Referer.ToString()));
 
-            string json = JsonSerializer.Serialize(meta, ClickJsonOptions);
+                string json = JsonSerializer.Serialize(meta, ClickJsonOptions);
 
-            _ = _cache.ListLeftPushAsync($"click-events:{shortCode}", json);
+                await _cache.ListLeftPushAsync($"click-events:{shortCode}", json);
+            }
+            catch (Exception ex)
+            {
+                // Analytics must never fail the redirect.
+                Console.WriteLine($"QueueClickEvent failed: {ex.Message}");
+            }
         }
 
         private static string? Nullify(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
@@ -207,6 +223,35 @@ namespace ShortenerUrlApp.WebApi.Services
                 // index on ShortCode is the source of truth here.
                 throw new AliasAlreadyInUseException(code);
             }
+            catch (DbUpdateException)
+            {
+                // Lost the race for a randomly generated code to another request.
+                // Detach the failed entity and retry with a new code.
+                context.Entry(shotenerUrl).State = EntityState.Detached;
+
+                // Retry up to a few times to avoid infinite loops on persistent collisions.
+                for (int attempt = 0; attempt < 5; attempt++)
+                {
+                    code = GenerateCode();
+                    if (!await context.ShortenerUrls.AnyAsync(u => u.ShortCode == code, ct))
+                    {
+                        shotenerUrl.ShortCode = code;
+                        context.ShortenerUrls.Add(shotenerUrl);
+                        try
+                        {
+                            await context.SaveChangesAsync(ct);
+                            return code;
+                        }
+                        catch (DbUpdateException)
+                        {
+                            context.Entry(shotenerUrl).State = EntityState.Detached;
+                            continue;
+                        }
+                    }
+                }
+
+                throw new AliasAlreadyInUseException(code);
+            }
 
             return code;
         }
@@ -258,6 +303,8 @@ namespace ShortenerUrlApp.WebApi.Services
         public async Task SyncClicksToDbAsync(CancellationToken ct)
         {
             var server = redis.GetServer(redis.GetEndPoints()[0]);
+            // IServer.Keys() streams matching keys with SCAN under the hood; IServer.Scan
+            // does not exist as a public API in StackExchange.Redis 2.11.
             var keys = server.Keys(pattern: "clicks:*").ToList();
 
             foreach (var key in keys)
