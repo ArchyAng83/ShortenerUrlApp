@@ -178,7 +178,8 @@
                 }
 
                 // On success the API returns the bare short code as a JSON string.
-                var newCode = await response.Content.ReadFromJsonAsync<string>();
+                var rawCode = await response.Content.ReadAsStringAsync();
+                var newCode = rawCode.Trim('"');
 
                 MudDialogInstance.Close(DialogResult.Ok(newCode ?? string.Empty));
                 return;
