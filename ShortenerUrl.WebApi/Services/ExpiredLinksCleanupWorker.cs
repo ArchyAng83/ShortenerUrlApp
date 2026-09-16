@@ -20,27 +20,32 @@ namespace ShortenerUrlApp.WebApi.Services
                     break;
                 }
 
-                using var scope = serviceProvider.CreateScope();
-                var service = scope.ServiceProvider.GetRequiredService<IShortenerUrlService>();
+                await CleanupOnceAsync(stoppingToken);
+            }
+        }
 
-                try
-                {
-                    var deleted = await service.DeleteExpiredUrlsAsync(stoppingToken);
+        // Per-tick sweep, isolated so unit tests can exercise it without a five-minute delay.
+        internal async Task CleanupOnceAsync(CancellationToken ct)
+        {
+            using var scope = serviceProvider.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<IShortenerUrlService>();
 
-                    if (deleted > 0)
-                    {
-                        Console.WriteLine($"ExpiredLinksCleanup: removed {deleted} expired link(s).");
-                    }
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            try
+            {
+                var deleted = await service.DeleteExpiredUrlsAsync(ct);
+
+                if (deleted > 0)
                 {
-                    // Host is shutting down mid-sweep; nothing to log.
-                    break;
+                    Console.WriteLine($"ExpiredLinksCleanup: removed {deleted} expired link(s).");
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error ExpiredCleanup: {ex.Message}");
-                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Worker is shutting down mid-sweep; nothing to log.
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error ExpiredCleanup: {ex.Message}");
             }
         }
     }

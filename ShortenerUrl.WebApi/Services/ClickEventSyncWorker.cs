@@ -37,22 +37,28 @@ namespace ShortenerUrlApp.WebApi.Services
 
                 using var scope = serviceProvider.CreateScope();
 
-                try
-                {
-                    await SyncAsync(scope.ServiceProvider, stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error ClickEventSync: {ex.Message}");
-                }
+                await RunOneSyncAsync(scope.ServiceProvider, stoppingToken);
             }
         }
 
-        private static async Task SyncAsync(IServiceProvider scopedProvider, CancellationToken ct)
+        // Per-tick drain, isolated so unit tests can exercise it without a minute-long delay.
+        internal static async Task RunOneSyncAsync(IServiceProvider scopedProvider, CancellationToken ct)
+        {
+            try
+            {
+                await SyncAsync(scopedProvider, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Host is shutting down mid-drain; nothing to log.
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error ClickEventSync: {ex.Message}");
+            }
+        }
+
+        internal static async Task SyncAsync(IServiceProvider scopedProvider, CancellationToken ct)
         {
             var context = scopedProvider.GetRequiredService<ShortenerUrlDbContext>();
             var redis = scopedProvider.GetRequiredService<IConnectionMultiplexer>();

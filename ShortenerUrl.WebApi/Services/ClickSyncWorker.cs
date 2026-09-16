@@ -22,21 +22,27 @@ namespace ShortenerUrlApp.WebApi.Services
                     break;
                 }
 
-                using var scope = serviceProvider.CreateScope();
-                var service = scope.ServiceProvider.GetRequiredService<IShortenerUrlService>();
+                await FlushOnceAsync(stoppingToken);
+            }
+        }
 
-                try
-                {
-                    await service.SyncClicksToDbAsync(stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error Sync: {ex.Message}");
-                }
+        // Per-tick flush, isolated so unit tests can exercise it without a minute-long delay.
+        internal async Task FlushOnceAsync(CancellationToken ct)
+        {
+            using var scope = serviceProvider.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<IShortenerUrlService>();
+
+            try
+            {
+                await service.SyncClicksToDbAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Worker is shutting down mid-flush; nothing to log.
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error Sync: {ex.Message}");
             }
         }
     }

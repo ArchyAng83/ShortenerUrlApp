@@ -30,4 +30,8 @@
     <ProjectReference Include="..\ShortenerUrlApp.Shared\ShortenerUrlApp.Shared.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShortenerUrlApp.Tests" />
+  </ItemGroup>
+
 </Project>
