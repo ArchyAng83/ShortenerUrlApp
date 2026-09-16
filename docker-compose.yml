@@ -39,6 +39,9 @@ services:
     build:
       context: .
       dockerfile: ShortenerUrl.WebApi/Dockerfile
+      args:
+        # Optional MaxMind license key; empty means the image falls back to the P3TERX mirror.
+        MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
     container_name: shortener-api
     environment:
       # Keep CORS in sync with the published UI port/origin (index 0 of Cors:AllowedOrigins).
@@ -49,6 +52,7 @@ services:
       - JwtSettings__Issuer=${JWT_ISSUER:-ShortenerUrlApp}
       - JwtSettings__Audience=${JWT_AUDIENCE:-ShortenerUrlApp}
       - JwtSettings__ExpiryMinutes=${JWT_EXPIRY_MINUTES:-60}
+      - GeoIp__DatabasePath=${GEOIP_DATABASE_PATH:-Data/GeoLite2-City.mmdb}
       - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Development}
     ports:
       - "${API_PORT:-5153}:8080"

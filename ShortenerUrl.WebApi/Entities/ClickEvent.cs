@@ -16,8 +16,8 @@ namespace ShortenerUrlApp.WebApi.Entities
 
         public DateTime ClickedAt { get; set; } = DateTime.UtcNow;
 
-        // Geo/UA metadata; IP and User-Agent are captured at redirect time,
-        // Country/City are reserved for a future GeoIP enrichment step.
+        // Geo/UA metadata; IP/User-Agent/Referrer are captured at redirect time,
+        // Country/City are filled by GeoIP enrichment in ClickEventSyncWorker.
         public string? IpAddress { get; set; }
         public string? UserAgent { get; set; }
         public string? Country { get; set; }

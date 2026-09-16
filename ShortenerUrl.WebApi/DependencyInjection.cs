@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -42,7 +42,8 @@ namespace ShortenerUrlApp.WebApi
                     ? configured
                     : ["http://localhost:5209", "https://localhost:7159"];
 
-            services.AddCors(options => {
+            services.AddCors(options =>
+            {
                 options.AddDefaultPolicy(policy =>
                     policy.WithOrigins(allowedOrigins)
                           .AllowAnyMethod()
@@ -88,6 +89,7 @@ namespace ShortenerUrlApp.WebApi
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IAnalyticsService, AnalyticsService>();
             services.AddScoped<IQRCodeService, QRCodeService>();
+            services.AddSingleton<IGeoIpService, GeoIpService>();
 
             // Exposes the current request (IP / User-Agent / Referer) to ShortenerUrlService
             // so it can buffer click metadata on the redirect path.

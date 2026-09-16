@@ -56,6 +56,7 @@ namespace ShortenerUrlApp.WebApi.Services
         {
             var context = scopedProvider.GetRequiredService<ShortenerUrlDbContext>();
             var redis = scopedProvider.GetRequiredService<IConnectionMultiplexer>();
+            var geoIp = scopedProvider.GetRequiredService<IGeoIpService>();
             var db = redis.GetDatabase();
 
             var server = redis.GetServer(redis.GetEndPoints()[0]);
@@ -99,12 +100,26 @@ namespace ShortenerUrlApp.WebApi.Services
                 if (!urlIds.TryGetValue(shortCode, out var urlId))
                     continue;
 
+                // Many clicks in a batch share the same client IP; de-dupe lookups within the drain.
+                // The mmdb read is cheap (in-memory binary search), so a per-batch cache is plenty.
+                var geoCache = new Dictionary<string, GeoIpLocation?>(StringComparer.Ordinal);
+
                 foreach (var item in await rangeTask)
                 {
                     ClickEventMeta? meta = TryParse(item);
 
                     if (meta is null)
                         continue;
+
+                    GeoIpLocation? location = null;
+                    if (meta.IpAddress is not null)
+                    {
+                        if (!geoCache.TryGetValue(meta.IpAddress, out location))
+                        {
+                            location = geoIp.Resolve(meta.IpAddress);
+                            geoCache.Add(meta.IpAddress, location);
+                        }
+                    }
 
                     events.Add(new ClickEvent
                     {
@@ -113,8 +128,9 @@ namespace ShortenerUrlApp.WebApi.Services
                         ClickedAt = meta.ClickedAt,
                         IpAddress = meta.IpAddress,
                         UserAgent = meta.UserAgent,
-                        Referrer = meta.Referrer
-                        // Country/City stay null until a GeoIP enrichment step fills them.
+                        Referrer = meta.Referrer,
+                        Country = location?.CountryCode,
+                        City = location?.CityName
                     });
                 }
             }

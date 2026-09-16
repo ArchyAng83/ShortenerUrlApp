@@ -36,6 +36,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- MaxMind public GeoIP2 test database; used to verify real mmdb lookups without shipping the full GeoLite2 DB. -->
+    <None Include="GeoIp\GeoIP2-City-Test.mmdb" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
