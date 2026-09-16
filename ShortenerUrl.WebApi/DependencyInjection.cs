@@ -13,6 +13,15 @@ namespace ShortenerUrlApp.WebApi
     //Перенесено в DI для чистоты в Program.cs
     public static class DependencyInjection
     {
+        private static readonly HashSet<string> KnownWeakSecrets = new()
+        {
+            "your-super-secret-key-minimum-32-characters-long",
+            "your_secure_password",
+            "password",
+            "secret",
+            "12345678901234567890123456789012"
+        };
+
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
             // Connection strings are externalized: base values are empty defaults,
@@ -63,10 +72,11 @@ namespace ShortenerUrlApp.WebApi
 
             var jwtSection = configuration.GetSection("JwtSettings");
             var jwtSecret = jwtSection["Secret"];
-            if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.Length < 32)
+            if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.Length < 32
+                || KnownWeakSecrets.Contains(jwtSecret))
             {
                 throw new InvalidOperationException(
-                    "JwtSettings:Secret is not configured. Set 'JwtSettings__Secret' with at least 32 characters.");
+                    "JwtSettings:Secret is not configured or is a known-weak value. Set 'JwtSettings__Secret' with at least 32 cryptographically random characters.");
             }
 
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
