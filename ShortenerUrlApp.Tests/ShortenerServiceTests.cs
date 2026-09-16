@@ -1,4 +1,4 @@
-﻿using FluentAssertions;
+using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using ShortenerUrlApp.Shared.DTOs;
@@ -24,7 +24,7 @@ namespace ShortenerUrlApp.Tests
 
             // Assert
             codes.Should().HaveCount(1000); // Нет дубликатов в выборке
-            codes.Should().OnlyContain(c => c.Length == 7); 
+            codes.Should().OnlyContain(c => c.Length == 7);
         }
 
         [Fact]

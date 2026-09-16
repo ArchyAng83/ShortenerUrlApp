@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using ShortenerUrlApp.Shared.Validation;
 
 namespace ShortenerUrlApp.Shared.DTOs
@@ -8,7 +8,8 @@ namespace ShortenerUrlApp.Shared.DTOs
     {
         public Guid Id { get; init; }
 
-        [Required][HttpUrl]
+        [Required]
+        [HttpUrl]
         public string? LongUrl { get; init; }
     }
 }

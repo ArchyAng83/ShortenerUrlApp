@@ -1,4 +1,4 @@
-﻿namespace ShortenerUrlApp.WebApi.Constants
+namespace ShortenerUrlApp.WebApi.Constants
 {
     public class Constant
     {

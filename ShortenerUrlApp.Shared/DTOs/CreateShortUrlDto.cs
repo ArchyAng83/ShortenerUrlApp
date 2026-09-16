@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using ShortenerUrlApp.Shared.Validation;
 
 namespace ShortenerUrlApp.Shared.DTOs
@@ -10,7 +10,8 @@ namespace ShortenerUrlApp.Shared.DTOs
     // (used by unit tests). Init-only validated properties satisfy both consumers.
     public class CreateShortUrlDto
     {
-        [Required][HttpUrl]
+        [Required]
+        [HttpUrl]
         public string? LongUrl { get; init; }
 
         // Optional user-chosen short code. Null/empty means "generate a random one".
