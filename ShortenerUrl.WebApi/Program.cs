@@ -17,8 +17,8 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-	app.MapScalarApiReference(opt =>
-	{
+    app.MapScalarApiReference(opt =>
+    {
         opt.Theme = ScalarTheme.DeepSpace;
         opt.DarkMode = true;
     });
@@ -57,3 +57,6 @@ app.MapGet("/{code}", async (string code, IShortenerUrlService service, Cancella
 app.ApplyMigrations();
 
 app.Run();
+
+// Exposed so integration tests (WebApplicationFactory) and tooling can reference the app entry point.
+public partial class Program { }
