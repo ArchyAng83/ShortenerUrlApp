@@ -15,7 +15,7 @@ namespace ShortenerUrlApp.WebApi.Services
             int? maxClicks = null,
             CancellationToken ct = default);
 
-        Task<string> GetLongUrlAsync(string shortCode, CancellationToken ct);
+        Task<string?> GetLongUrlAsync(string shortCode, CancellationToken ct);
 
         // Status-aware resolution for the redirect endpoint: distinguishes 404 from 410 (Gone).
         Task<RedirectResult> GetLongUrlWithStatusAsync(string shortCode, CancellationToken ct = default);

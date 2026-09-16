@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Moq;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Data;
+using ShortenerUrlApp.WebApi.Entities;
 using ShortenerUrlApp.WebApi.Services;
 using StackExchange.Redis;
 using System.ComponentModel.DataAnnotations;
@@ -23,14 +24,13 @@ namespace ShortenerUrlApp.Tests
             }
 
             // Assert
-            codes.Should().HaveCount(1000); // Нет дубликатов в выборке
+            codes.Should().HaveCount(1000);
             codes.Should().OnlyContain(c => c.Length == 7);
         }
 
         [Fact]
         public async Task GetLongUrlAsync_ShouldReturnFromCache_IfKeyExists()
         {
-            // Arrange: the DB stays empty — a cache hit must not touch it.
             using var db = new ShortenerUrlDbContext(
                 new DbContextOptionsBuilder<ShortenerUrlDbContext>()
                     .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -45,11 +45,35 @@ namespace ShortenerUrlApp.Tests
 
             var service = new ShortenerUrlService(db, mockRedis.Object);
 
-            // Act
             var result = await service.GetLongUrlAsync("abc123");
 
-            // Assert
             result.Should().Be("https://google.com");
+        }
+
+        [Fact]
+        public async Task GetLongUrlAsync_ShouldReturnNull_WhenLinkIsExpired()
+        {
+            using var db = new ShortenerUrlDbContext(
+                new DbContextOptionsBuilder<ShortenerUrlDbContext>()
+                    .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                    .Options);
+
+            var mockRedis = new Mock<IConnectionMultiplexer>();
+            mockRedis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(new Mock<IDatabase>().Object);
+
+            db.ShortenerUrls.Add(new ShortenerUrl
+            {
+                LongUrl = "https://example.com",
+                ShortCode = "expired",
+                ExpiresAt = DateTime.UtcNow.AddMinutes(-1)
+            });
+            await db.SaveChangesAsync();
+
+            var service = new ShortenerUrlService(db, mockRedis.Object);
+
+            var result = await service.GetLongUrlAsync("expired");
+
+            result.Should().BeNull();
         }
 
         [Theory]
@@ -58,18 +82,12 @@ namespace ShortenerUrlApp.Tests
         [InlineData("")]
         public void CreateShortUrlDto_ShouldFail_OnInvalidUrl(string badUrl)
         {
-            // Arrange
-            // CreateShortUrlDto/UpdateLongUrlDto are classes with validated init properties:
-            // positional records break ASP.NET Core MVC complex-object validation
-            // ("Record type ... has validation metadata defined on property ...").
             var dto = new CreateShortUrlDto { LongUrl = badUrl };
             var context = new ValidationContext(dto);
             var results = new List<ValidationResult>();
 
-            // Act
             var isValid = Validator.TryValidateObject(dto, context, results, true);
 
-            // Assert
             isValid.Should().BeFalse();
         }
 

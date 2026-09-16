@@ -65,11 +65,11 @@ namespace ShortenerUrlApp.WebApi.Services
                             .OrderByDescending(u => u.CreateAt)
                             .ToListAsync(ct);
 
-        public async Task<string> GetLongUrlAsync(string shortCode, CancellationToken ct = default)
+        public async Task<string?> GetLongUrlAsync(string shortCode, CancellationToken ct = default)
         {
             // Compatibility wrapper for callers that only need the URL (null when unresolvable).
             var result = await GetLongUrlWithStatusAsync(shortCode, ct);
-            return result.LongUrl!;
+            return result.LongUrl;
         }
 
         public async Task<RedirectResult> GetLongUrlWithStatusAsync(string shortCode, CancellationToken ct = default)
@@ -128,7 +128,7 @@ namespace ShortenerUrlApp.WebApi.Services
             }
 
             // Count a click only when the redirect actually happens (expired/capped links above exit early).
-            await RecordClickAsync(shortCode);
+            await RecordClickAsync(shortCode, ct);
 
             return RedirectResult.Redirect(shortenerUrl.LongUrl);
         }
@@ -138,10 +138,10 @@ namespace ShortenerUrlApp.WebApi.Services
         // redirect is only returned once both writes are durably buffered, because Redis is the
         // source of truth until the background workers flush to PostgreSQL. A Redis failure is
         // logged and never allowed to break the redirect itself.
-        private async Task RecordClickAsync(string shortCode)
+        private async Task RecordClickAsync(string shortCode, CancellationToken ct = default)
         {
             var increment = _cache.StringIncrementAsync($"clicks:{shortCode}");
-            var push = QueueClickEventAsync(shortCode);
+            var push = QueueClickEventAsync(shortCode, ct);
 
             try
             {
@@ -155,10 +155,12 @@ namespace ShortenerUrlApp.WebApi.Services
 
         // Captures click metadata as JSON into the "click-events:{shortCode}" Redis list.
         // Fire-and-forget on purpose: analytics logging must never slow down or fail the redirect.
-        private async Task QueueClickEventAsync(string shortCode)
+        private async Task QueueClickEventAsync(string shortCode, CancellationToken ct = default)
         {
             try
             {
+                ct.ThrowIfCancellationRequested();
+
                 HttpContext? httpContext = httpContextAccessor?.HttpContext;
                 HttpRequest? request = httpContext?.Request;
 
@@ -172,6 +174,10 @@ namespace ShortenerUrlApp.WebApi.Services
                 string json = JsonSerializer.Serialize(meta, ClickJsonOptions);
 
                 await _cache.ListLeftPushAsync($"click-events:{shortCode}", json).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancelled — discard the click event.
             }
             catch (Exception ex)
             {
@@ -215,7 +221,7 @@ namespace ShortenerUrlApp.WebApi.Services
                 while (await context.ShortenerUrls.AnyAsync(u => u.ShortCode == code, ct));
             }
 
-            var shotenerUrl = new ShortenerUrl()
+            var shortenerUrl = new ShortenerUrl()
             {
                 LongUrl = longUrl,
                 ShortCode = code,
@@ -227,7 +233,7 @@ namespace ShortenerUrlApp.WebApi.Services
                 MaxClicks = maxClicks
             };
 
-            context.ShortenerUrls.Add(shotenerUrl);
+            context.ShortenerUrls.Add(shortenerUrl);
 
             try
             {
@@ -243,7 +249,7 @@ namespace ShortenerUrlApp.WebApi.Services
             {
                 // Lost the race for a randomly generated code to another request.
                 // Detach the failed entity and retry with a new code.
-                context.Entry(shotenerUrl).State = EntityState.Detached;
+                context.Entry(shortenerUrl).State = EntityState.Detached;
 
                 // Retry up to a few times to avoid infinite loops on persistent collisions.
                 for (int attempt = 0; attempt < 5; attempt++)
@@ -251,8 +257,8 @@ namespace ShortenerUrlApp.WebApi.Services
                     code = GenerateCode();
                     if (!await context.ShortenerUrls.AnyAsync(u => u.ShortCode == code, ct))
                     {
-                        shotenerUrl.ShortCode = code;
-                        context.ShortenerUrls.Add(shotenerUrl);
+                        shortenerUrl.ShortCode = code;
+                        context.ShortenerUrls.Add(shortenerUrl);
                         try
                         {
                             await context.SaveChangesAsync(ct);
@@ -260,7 +266,7 @@ namespace ShortenerUrlApp.WebApi.Services
                         }
                         catch (DbUpdateException)
                         {
-                            context.Entry(shotenerUrl).State = EntityState.Detached;
+                            context.Entry(shortenerUrl).State = EntityState.Detached;
                             continue;
                         }
                     }
@@ -326,13 +332,15 @@ namespace ShortenerUrlApp.WebApi.Services
         public async Task SyncClicksToDbAsync(CancellationToken ct)
         {
             var server = redis.GetServer(redis.GetEndPoints()[0]);
-            // IServer.Keys() streams matching keys with SCAN under the hood; IServer.Scan
-            // does not exist as a public API in StackExchange.Redis 2.11.
             var keys = server.Keys(pattern: "clicks:*").ToList();
 
             foreach (var key in keys)
             {
                 var shortCode = key.ToString().Replace("clicks:", "");
+
+                // Skip URLs that were deleted between listing and sync to prevent lost clicks.
+                if (!await context.ShortenerUrls.AsNoTracking().AnyAsync(u => u.ShortCode == shortCode, ct))
+                    continue;
 
                 // Получаем значение и удаляем ключ из Redis за одну операцию
                 var clicksValue = await _cache.StringGetDeleteAsync(key);
