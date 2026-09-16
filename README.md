@@ -159,10 +159,10 @@ Protected endpoints require an `Authorization: Bearer <token>` header.
 
 | Method | Route | Description |
 |---|---|---|
-| `GET` | `/api/ShortenerUrl` | All links of the current user, newest first |
-| `POST` | `/api/ShortenerUrl` | Create a link; returns the short code (`400` invalid URL/alias, `409` alias taken) |
-| `PUT` | `/api/ShortenerUrl` | Re-point an existing link to a new target URL, by `id` in the body (`404` if not owned) |
-| `DELETE` | `/api/ShortenerUrl/{id}` | Delete a link and its Redis keys (`204` on success, `404` if not owned) |
+| `GET` | `/api/v1/urls` | All links of the current user, newest first |
+| `POST` | `/api/v1/urls` | Create a link; returns the short code (`400` invalid URL/alias, `409` alias taken) |
+| `PUT` | `/api/v1/urls` | Re-point an existing link to a new target URL, by `id` in the body (`404` if not owned) |
+| `DELETE` | `/api/v1/urls/{id}` | Delete a link and its Redis keys (`204` on success, `404` if not owned) |
 
 ### Analytics and QR codes (authorized)
 
@@ -178,8 +178,8 @@ own. Unauthenticated calls return `401`.
 
 ### Route versioning note
 
-Link CRUD is routed by controller name at `/api/ShortenerUrl`, while auth, analytics and QR
-codes live under the versioned `/api/v1/...` prefix.
+All API routes — link CRUD, auth, analytics and QR codes — live under the versioned
+`/api/v1/...` prefix (link CRUD on `api/v1/urls`).
 
 ### Examples
 
@@ -198,7 +198,7 @@ curl -X POST http://localhost:5153/api/v1/auth/login \
 Create a custom alias that expires in 24 hours, cap it at 100 clicks, then read analytics:
 
 ```bash
-curl -X POST http://localhost:5153/api/ShortenerUrl \
+curl -X POST http://localhost:5153/api/v1/urls \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"longUrl":"https://example.com/very/long/path","customAlias":"demo-link","expiresInMinutes":1440,"maxClicks":100}'

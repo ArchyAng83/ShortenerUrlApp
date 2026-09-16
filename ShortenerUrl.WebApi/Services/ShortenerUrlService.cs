@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using ShortenerUrlApp.WebApi.Constants;
 using ShortenerUrlApp.WebApi.Data;
 using ShortenerUrlApp.WebApi.Entities;
@@ -83,9 +83,7 @@ namespace ShortenerUrlApp.WebApi.Services
                 // Links with a click cap are never cached (a cached snapshot cannot track live
                 // click counts), and a cached entry's TTL ends no later than ExpiresAt,
                 // so a cache hit is always safe to redirect.
-                _ = _cache.StringIncrementAsync($"clicks:{shortCode}")
-                    .ContinueWith(t => { if (t.IsFaulted) Console.WriteLine($"Click increment failed: {t.Exception?.InnerException?.Message}"); });
-                QueueClickEvent(shortCode);
+                await RecordClickAsync(shortCode);
                 return RedirectResult.Redirect(cachedUrl);
             }
 
@@ -113,8 +111,6 @@ namespace ShortenerUrlApp.WebApi.Services
                     return RedirectResult.LimitReached();
             }
 
-            _ = await _cache.StringIncrementAsync($"clicks:{shortCode}");
-
             // Cache only uncapped links; the TTL is clamped so the entry dies at ExpiresAt.
             if (!shortenerUrl.MaxClicks.HasValue)
             {
@@ -132,14 +128,34 @@ namespace ShortenerUrlApp.WebApi.Services
             }
 
             // Count a click only when the redirect actually happens (expired/capped links above exit early).
-            QueueClickEvent(shortCode);
+            await RecordClickAsync(shortCode);
 
             return RedirectResult.Redirect(shortenerUrl.LongUrl);
         }
 
+        // Buffers a click in Redis before the redirect is served: increments the write-behind
+        // counter and pushes the click metadata in parallel (one Redis round-trip). A successful
+        // redirect is only returned once both writes are durably buffered, because Redis is the
+        // source of truth until the background workers flush to PostgreSQL. A Redis failure is
+        // logged and never allowed to break the redirect itself.
+        private async Task RecordClickAsync(string shortCode)
+        {
+            var increment = _cache.StringIncrementAsync($"clicks:{shortCode}");
+            var push = QueueClickEventAsync(shortCode);
+
+            try
+            {
+                await Task.WhenAll(increment, push).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"RecordClickAsync failed for {shortCode}: {ex.Message}");
+            }
+        }
+
         // Captures click metadata as JSON into the "click-events:{shortCode}" Redis list.
         // Fire-and-forget on purpose: analytics logging must never slow down or fail the redirect.
-        private async void QueueClickEvent(string shortCode)
+        private async Task QueueClickEventAsync(string shortCode)
         {
             try
             {
@@ -155,7 +171,7 @@ namespace ShortenerUrlApp.WebApi.Services
 
                 string json = JsonSerializer.Serialize(meta, ClickJsonOptions);
 
-                await _cache.ListLeftPushAsync($"click-events:{shortCode}", json);
+                await _cache.ListLeftPushAsync($"click-events:{shortCode}", json).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -283,21 +299,27 @@ namespace ShortenerUrlApp.WebApi.Services
                 .Where(u => u.ExpiresAt.HasValue && u.ExpiresAt < now)
                 .ToListAsync(ct);
 
-        if (expired.Count == 0)
-            return 0;
+            if (expired.Count == 0)
+                return 0;
 
-        context.ShortenerUrls.RemoveRange(expired);
-        await context.SaveChangesAsync(ct);
+            context.ShortenerUrls.RemoveRange(expired);
+            await context.SaveChangesAsync(ct);
 
-        // Evict Redis keys after DB deletion to avoid inconsistency if SaveChangesAsync fails.
-        foreach (var url in expired)
-        {
-            await _cache.KeyDeleteAsync($"url:{url.ShortCode}");
-            await _cache.KeyDeleteAsync($"clicks:{url.ShortCode}");
-            await _cache.KeyDeleteAsync($"click-events:{url.ShortCode}");
+            // Evict Redis keys after DB deletion to avoid inconsistency if SaveChangesAsync fails.
+            foreach (var url in expired)
+            {
+                await _cache.KeyDeleteAsync($"url:{url.ShortCode}");
+                await _cache.KeyDeleteAsync($"clicks:{url.ShortCode}");
+                await _cache.KeyDeleteAsync($"click-events:{url.ShortCode}");
+            }
+
+            return expired.Count;
         }
 
-        return expired.Count;
+        public async Task<int> GetPendingClicksAsync(string shortCode, CancellationToken ct = default)
+        {
+            var value = await _cache.StringGetAsync($"clicks:{shortCode}");
+            return value.HasValue ? (int)value : 0;
         }
 
         //Для синхронизации Redis с БД

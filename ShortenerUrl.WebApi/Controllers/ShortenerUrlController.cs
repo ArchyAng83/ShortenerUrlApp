@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Constants;
@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 namespace ShortenerUrlApp.WebApi.Controllers
 {
     [Authorize]
-    [Route("api/[controller]")]
+    [Route("api/v1/urls")]
     [ApiController]
     public partial class ShortenerUrlController(IShortenerUrlService shortenerService) : ControllerBase
     {
@@ -26,12 +26,18 @@ namespace ShortenerUrlApp.WebApi.Controllers
 
             var now = DateTime.UtcNow;
 
-            var response = shortenerUrls.Select(u => new UrlResposeDto(
+            // Batch-fetch pending Redis clicks for all URLs in one pipeline round-trip.
+            var pendingTasks = shortenerUrls
+                .Select(u => shortenerService.GetPendingClicksAsync(u.ShortCode, ct))
+                .ToList();
+            var pendingClicks = await Task.WhenAll(pendingTasks);
+
+            var response = shortenerUrls.Select((u, i) => new UrlResponseDto(
                 u.Id,
                 u.LongUrl,
                 $"{Request.Scheme}://{Request.Host}/{u.ShortCode}",
                 u.CreateAt,
-                u.CountOfClick)
+                u.CountOfClick + pendingClicks[i])
             {
                 ExpiresAt = u.ExpiresAt,
                 IsCustomAlias = u.IsCustomAlias,

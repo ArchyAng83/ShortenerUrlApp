@@ -1,4 +1,4 @@
-﻿using ShortenerUrlApp.WebApi.Entities;
+using ShortenerUrlApp.WebApi.Entities;
 
 namespace ShortenerUrlApp.WebApi.Services
 {
@@ -24,6 +24,9 @@ namespace ShortenerUrlApp.WebApi.Services
         Task<bool> UpdateUrlAsync(Guid id, string newLongUrl, string? userId, CancellationToken ct);
         Task<bool> DeleteUrlAsync(Guid id, string? userId, CancellationToken ct);
         Task SyncClicksToDbAsync(CancellationToken ct);
+
+        // Returns the pending (not-yet-flushed) click count from Redis for a given short code.
+        Task<int> GetPendingClicksAsync(string shortCode, CancellationToken ct = default);
 
         // Removes links whose ExpiresAt has passed and evicts their Redis keys. Returns the deleted row count.
         Task<int> DeleteExpiredUrlsAsync(CancellationToken ct = default);

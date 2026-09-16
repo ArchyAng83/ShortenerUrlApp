@@ -1,6 +1,6 @@
-﻿namespace ShortenerUrlApp.Shared.DTOs
+namespace ShortenerUrlApp.Shared.DTOs
 {
-    public record UrlResposeDto(
+    public record UrlResponseDto(
         Guid Id,
         string LongUrl,
         string ShortUrl,

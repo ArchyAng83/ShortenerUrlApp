@@ -1,5 +1,6 @@
 @page "/dashboard"
 @attribute [Authorize]
+@implements IDisposable
 @inject NavigationManager Navigation
 @inject IDialogService Dialog
 @inject ISnackbar Snackbar
@@ -42,19 +43,19 @@
           RowsPerPage="10"
           Loading="_loading"
           LoadingProgressColor="Color.Primary"
-          Filter="@((UrlResposeDto url) => MatchesSearch(url))">
+          Filter="@((UrlResponseDto url) => MatchesSearch(url))">
     <HeaderContent>
         <MudTh>
-            <MudTableSortLabel SortBy="new Func<UrlResposeDto, object>(x => UrlHelpers.CodeFromShortUrl(x.ShortUrl))">Short URL</MudTableSortLabel>
+            <MudTableSortLabel SortBy="new Func<UrlResponseDto, object>(x => UrlHelpers.CodeFromShortUrl(x.ShortUrl))">Short URL</MudTableSortLabel>
         </MudTh>
         <MudTh>
-            <MudTableSortLabel SortBy="new Func<UrlResposeDto, object>(x => x.LongUrl)">Long URL</MudTableSortLabel>
+            <MudTableSortLabel SortBy="new Func<UrlResponseDto, object>(x => x.LongUrl)">Long URL</MudTableSortLabel>
         </MudTh>
         <MudTh>
-            <MudTableSortLabel SortBy="new Func<UrlResposeDto, object>(x => x.CreateAt)">Created</MudTableSortLabel>
+            <MudTableSortLabel SortBy="new Func<UrlResponseDto, object>(x => x.CreateAt)">Created</MudTableSortLabel>
         </MudTh>
         <MudTh>
-            <MudTableSortLabel SortBy="new Func<UrlResposeDto, object>(x => x.CountOfClick)">Clicks</MudTableSortLabel>
+            <MudTableSortLabel SortBy="new Func<UrlResponseDto, object>(x => x.CountOfClick)">Clicks</MudTableSortLabel>
         </MudTh>
         <MudTh>Status</MudTh>
         <MudTh Style="text-align:right;">Actions</MudTh>
@@ -114,11 +115,24 @@
 </MudTable>
 
 @code {
-    private List<UrlResposeDto> _urls = [];
+    private List<UrlResponseDto> _urls = [];
     private string _search = string.Empty;
     private bool _loading = true;
+    private Timer? _refreshTimer;
 
-    protected override async Task OnInitializedAsync() => await ReloadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+
+        // Poll for live click count updates every 10 seconds.
+        _refreshTimer = new Timer(async _ =>
+        {
+            await ReloadAsync();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+    }
+
+    public void Dispose() => _refreshTimer?.Dispose();
 
     private async Task ReloadAsync()
     {
@@ -126,7 +140,7 @@
 
         try
         {
-            _urls = await Http.GetFromJsonAsync<List<UrlResposeDto>>("api/ShortenerUrl") ?? [];
+            _urls = await Http.GetFromJsonAsync<List<UrlResponseDto>>("api/v1/urls") ?? [];
         }
         catch (HttpRequestException)
         {
@@ -143,7 +157,7 @@
             ? "No links yet — create your first one."
             : $"{_urls.Count} link{(_urls.Count == 1 ? "" : "s")} managed · {_urls.Count(u => !u.IsExpired && (u.MaxClicks is null || u.CountOfClick < u.MaxClicks))} active";
 
-    private bool MatchesSearch(UrlResposeDto url)
+    private bool MatchesSearch(UrlResponseDto url)
     {
         if (string.IsNullOrWhiteSpace(_search))
         {
@@ -156,27 +170,27 @@
             || url.LongUrl.Contains(term, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string ClicksText(UrlResposeDto url) =>
+    private static string ClicksText(UrlResponseDto url) =>
         url.MaxClicks is { } max ? $"{url.CountOfClick:N0} / {max:N0}" : $"{url.CountOfClick:N0}";
 
     /// <summary>
     /// Status mirrors the redirect behaviour: expiry kills the link outright,
     /// a reached click cap stops redirects too — everything else is active.
     /// </summary>
-    private RenderFragment StatusChip(UrlResposeDto url) =>@<text>
+    private RenderFragment StatusChip(UrlResponseDto url) =>@<text>
         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(url)">
             @StatusLabel(url)
         </MudChip>
     </text>;
 
-    private static Color StatusColor(UrlResposeDto url) =>
+    private static Color StatusColor(UrlResponseDto url) =>
         url.IsExpired
             ? Color.Error
             : url.MaxClicks is { } max && url.CountOfClick >= max
                 ? Color.Warning
                 : Color.Success;
 
-    private static string StatusLabel(UrlResposeDto url) =>
+    private static string StatusLabel(UrlResponseDto url) =>
         url.IsExpired
             ? "Expired"
             : url.MaxClicks is { } max && url.CountOfClick >= max
@@ -219,7 +233,7 @@
         Snackbar.Add($"Created <{fullUrl}> — click the copy icon in the table to share it.", Severity.Success);
     }
 
-    private async Task OpenEditAsync(UrlResposeDto url)
+    private async Task OpenEditAsync(UrlResponseDto url)
     {
         var parameters = new DialogParameters<CreateUrlDialog>
         {
@@ -237,7 +251,7 @@
         await ReloadAsync();
     }
 
-    private async Task OpenQrAsync(UrlResposeDto url)
+    private async Task OpenQrAsync(UrlResponseDto url)
     {
         var shortCode = UrlHelpers.CodeFromShortUrl(url.ShortUrl);
 
@@ -252,7 +266,7 @@
         await Dialog.ShowAsync<QRCodeDialog>($"QR code · /{shortCode}", parameters, options);
     }
 
-    private async Task DeleteAsync(UrlResposeDto url)
+    private async Task DeleteAsync(UrlResponseDto url)
     {
         var parameters = new DialogParameters<ConfirmDialog>
         {
@@ -270,7 +284,7 @@
             return;
         }
 
-        var response = await Http.DeleteAsync($"api/ShortenerUrl/{url.Id}");
+        var response = await Http.DeleteAsync($"api/v1/urls/{url.Id}");
 
         if (response.IsSuccessStatusCode)
         {

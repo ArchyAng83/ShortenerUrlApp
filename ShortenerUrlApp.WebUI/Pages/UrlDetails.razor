@@ -216,7 +216,7 @@ else if (_url is not null)
 @code {
     [Parameter] public Guid Id { get; set; }
 
-    private UrlResposeDto? _url;
+    private UrlResponseDto? _url;
     private bool _loading = true;
     private bool _analyticsLoading;
 
@@ -241,7 +241,7 @@ else if (_url is not null)
 
         try
         {
-            var all = await Http.GetFromJsonAsync<List<UrlResposeDto>>("api/ShortenerUrl") ?? [];
+            var all = await Http.GetFromJsonAsync<List<UrlResponseDto>>("api/v1/urls") ?? [];
             _url = all.FirstOrDefault(u => u.Id == Id);
         }
         catch (HttpRequestException)

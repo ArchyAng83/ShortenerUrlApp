@@ -97,7 +97,7 @@
 @code {
     /// <summary>Existing URL to edit; null means "create a new link".</summary>
     [CascadingParameter] private MudDialogInstance MudDialogInstance { get; set; } = default!;
-    [Parameter] public UrlResposeDto? Existing { get; set; }
+    [Parameter] public UrlResponseDto? Existing { get; set; }
 
     private sealed class UrlFormModel
     {
@@ -168,7 +168,7 @@
                     MaxClicks = clicks
                 };
 
-                var response = await Http.PostAsJsonAsync("api/ShortenerUrl", dto);
+                var response = await Http.PostAsJsonAsync("api/v1/urls", dto);
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -186,7 +186,7 @@
             }
 
             var updateDto = new UpdateLongUrlDto { Id = Existing!.Id, LongUrl = _model.LongUrl.Trim() };
-            var updateResponse = await Http.PutAsJsonAsync("api/ShortenerUrl", updateDto);
+            var updateResponse = await Http.PutAsJsonAsync("api/v1/urls", updateDto);
 
             if (!updateResponse.IsSuccessStatusCode)
             {
