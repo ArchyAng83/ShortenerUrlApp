@@ -94,13 +94,20 @@ h1:focus {
     content: var(--blazor-load-percentage-text, "Loading");
 }
 
-/* MudBlazor snackbar close button — ensure it's clickable above overlays */
-.mud-snackbar-close-button {
+/* MudBlazor snackbar close button fix for Blazor WASM */
+.mud-snackbar .mud-icon-button {
     pointer-events: auto !important;
-    z-index: 2000 !important;
+    cursor: pointer !important;
 }
 
-/* Ensure snackbar container is above everything */
-.mud-snackbar-container {
-    z-index: 1500 !important;
+.mud-snackbar-close-button,
+.mud-snackbar .mudIconButton-root {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    z-index: 1501 !important;
+}
+
+/* Prevent snackbar actions from capturing close button clicks */
+.mud-snackbar-action {
+    pointer-events: auto !important;
 }
