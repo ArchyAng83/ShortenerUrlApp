@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Services;
 using System.Security.Claims;
@@ -13,6 +14,7 @@ namespace ShortenerUrlApp.WebApi.Controllers
     [Authorize]
     [Route("api/v1/urls/{urlId:guid}/analytics")]
     [ApiController]
+    [EnableRateLimiting("analytics")]
     public class AnalyticsController(IAnalyticsService analytics) : ControllerBase
     {
         [HttpGet]

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Services;
 
@@ -9,6 +10,7 @@ namespace ShortenerUrlApp.WebApi.Controllers
     public class AuthController(IAuthService authService) : ControllerBase
     {
         [HttpPost("register")]
+        [EnableRateLimiting("auth")]
         public async Task<IActionResult> RegisterAsync([FromBody] RegisterDto dto, CancellationToken ct)
         {
             var result = await authService.RegisterAsync(dto, ct);
@@ -22,6 +24,7 @@ namespace ShortenerUrlApp.WebApi.Controllers
         }
 
         [HttpPost("login")]
+        [EnableRateLimiting("auth")]
         public async Task<IActionResult> LoginAsync([FromBody] LoginDto dto, CancellationToken ct)
         {
             var result = await authService.LoginAsync(dto, ct);

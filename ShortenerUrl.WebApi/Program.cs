@@ -1,6 +1,7 @@
 using Scalar.AspNetCore;
 using ShortenerUrlApp.WebApi;
 using ShortenerUrlApp.WebApi.Services;
+using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,6 +30,9 @@ if (app.Environment.IsDevelopment())
 // CORS before auth so preflight OPTIONS requests are not rejected with 401.
 app.UseCors();
 
+// Rate limiting before auth and routing
+app.UseRateLimiter();
+
 // Authentication must run before authorization.
 app.UseAuthentication();
 app.UseAuthorization();
@@ -40,18 +44,16 @@ app.MapGet("/health", () => Results.Ok("Healthy")).WithName("Health");
 
 app.MapGet("/{code}", async (string code, IShortenerUrlService service, CancellationToken ct) =>
 {
-    // Метод сервиса сначала проверит Redis, что обеспечит высокую скорость.
-    // Статус-результат отличает несуществующую ссылку (404) от истёкшей или
-    // достигшей лимита кликов (410 Gone).
     var result = await service.GetLongUrlWithStatusAsync(code, ct);
 
     if (result.IsExpired || result.IsLimitReached)
         return Results.StatusCode(StatusCodes.Status410Gone);
 
     return result.IsNotFound
-        ? Results.NotFound("Url not found!")
+        ? Results.NotFound()
         : Results.Redirect(result.LongUrl!);
 })
+.WithMetadata(new EnableRateLimitingAttribute("redirect"))
 .WithName("RedirectToLongUrl");
 
 app.ApplyMigrations();

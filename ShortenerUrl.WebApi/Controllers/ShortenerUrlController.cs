@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Constants;
 using ShortenerUrlApp.WebApi.Services;
@@ -8,10 +9,10 @@ using System.Text.RegularExpressions;
 
 namespace ShortenerUrlApp.WebApi.Controllers
 {
-    [Authorize]
-    [Route("api/v1/urls")]
-    [ApiController]
-    public partial class ShortenerUrlController(IShortenerUrlService shortenerService) : ControllerBase
+[Authorize]
+[Route("api/v1/urls")]
+[ApiController]
+public partial class ShortenerUrlController(IShortenerUrlService shortenerService) : ControllerBase
     {
         // Codes that would collide with app routes (/{code} redirect vs /health, /api, /openapi, /scalar).
         private static readonly HashSet<string> ReservedAliases = new(StringComparer.OrdinalIgnoreCase)
@@ -49,6 +50,7 @@ namespace ShortenerUrlApp.WebApi.Controllers
         }
 
         [HttpPost]
+        [EnableRateLimiting("url_create")]
         public async Task<IActionResult> CreateShortUrlAsync([FromBody] CreateShortUrlDto shortUrlDto, CancellationToken ct)
         {
             // LongUrl is [Required], so a null never survives model binding; the guard

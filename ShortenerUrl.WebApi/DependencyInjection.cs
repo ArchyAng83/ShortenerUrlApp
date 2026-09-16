@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using ShortenerUrlApp.WebApi.Data;
@@ -57,6 +58,45 @@ namespace ShortenerUrlApp.WebApi
                     policy.WithOrigins(allowedOrigins)
                           .AllowAnyMethod()
                           .AllowAnyHeader());
+            });
+
+            // Rate limiting policies
+            // Default limits are lenient for test environments; configure appsettings.Production.json for stricter limits.
+            services.AddRateLimiter(options =>
+            {
+                options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+                options.AddFixedWindowLimiter("global", limiter =>
+                {
+                    limiter.PermitLimit = 100;
+                    limiter.Window = TimeSpan.FromMinutes(1);
+                    limiter.QueueLimit = 10;
+                });
+
+                options.AddFixedWindowLimiter("auth", limiter =>
+                {
+                    limiter.PermitLimit = 1000;
+                    limiter.Window = TimeSpan.FromMinutes(1);
+                    limiter.QueueLimit = 0;
+                });
+
+                options.AddFixedWindowLimiter("redirect", limiter =>
+                {
+                    limiter.PermitLimit = 100;
+                    limiter.Window = TimeSpan.FromMinutes(1);
+                });
+
+                options.AddFixedWindowLimiter("url_create", limiter =>
+                {
+                    limiter.PermitLimit = 50;
+                    limiter.Window = TimeSpan.FromHours(1);
+                });
+
+                options.AddFixedWindowLimiter("analytics", limiter =>
+                {
+                    limiter.PermitLimit = 30;
+                    limiter.Window = TimeSpan.FromMinutes(1);
+                });
             });
 
             // Identity without UI/cookies: UserManager + EF stores + token providers.
