@@ -3,8 +3,16 @@
 @inject JwtAuthStateProvider AuthState
 @inject NavigationManager Navigation
 @inject ISnackbar Snackbar
+@attribute [Microsoft.AspNetCore.Authorization.AllowAnonymous]
 
 <PageTitle>Create account — ShortenerUrl</PageTitle>
+
+@* Redirect authenticated users to dashboard *@
+@if (_isAuthenticated)
+{
+    Navigation.NavigateTo("/dashboard");
+    return;
+}
 
 <MudGrid Justify="Justify.Center" Class="mt-10">
     <MudItem xs="12" sm="8" md="5" lg="4">
@@ -107,6 +115,13 @@
     private RegisterInput _input = new();
     private bool _showPassword;
     private bool _busy;
+    private bool _isAuthenticated;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState.GetAuthenticationStateAsync();
+        _isAuthenticated = state.User.Identity?.IsAuthenticated == true;
+    }
 
     private async Task SubmitAsync()
     {
