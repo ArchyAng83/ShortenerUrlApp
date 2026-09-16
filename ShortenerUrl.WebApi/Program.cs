@@ -5,8 +5,6 @@ using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
 builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services.AddControllers();
@@ -14,7 +12,6 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -25,21 +22,19 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-//app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
 
-// CORS before auth so preflight OPTIONS requests are not rejected with 401.
 app.UseCors();
-
-// Rate limiting before auth and routing
 app.UseRateLimiter();
-
-// Authentication must run before authorization.
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
-// Used by the docker-compose health check; the literal segment wins over the /{code} redirect route.
 app.MapGet("/health", () => Results.Ok("Healthy")).WithName("Health");
 
 app.MapGet("/{code}", async (string code, IShortenerUrlService service, CancellationToken ct) =>
@@ -57,8 +52,6 @@ app.MapGet("/{code}", async (string code, IShortenerUrlService service, Cancella
 .WithName("RedirectToLongUrl");
 
 app.ApplyMigrations();
-
 app.Run();
 
-// Exposed so integration tests (WebApplicationFactory) and tooling can reference the app entry point.
 public partial class Program { }
