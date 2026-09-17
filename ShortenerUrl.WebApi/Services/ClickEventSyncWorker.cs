@@ -98,9 +98,24 @@ namespace ShortenerUrlApp.WebApi.Services
 
                 if (!await transaction.ExecuteAsync())
                 {
-                    // CONCURRENTWRITE conflict — consume the rangeTask to avoid
-                    // abandoning the task, then retry this key on the next tick.
-                    _ = await rangeTask;
+                    // CONCURRENTWRITE conflict — MULTI/EXEC is atomic, so the aborted
+                    // transaction deleted nothing; the key still holds every buffered
+                    // click and the per-tick SCAN will re-read it on the next pass.
+                    // The key is retried in the next tick, so nothing is lost here.
+                    //
+                    // Consume the abandoned rangeTask to avoid an unobserved task.
+                    // On some StackExchange.Redis versions awaiting a task queued into
+                    // an aborted transaction can throw, so guard it defensively to keep
+                    // one conflicting key from aborting the whole drain for this tick.
+                    try
+                    {
+                        _ = await rangeTask;
+                    }
+                    catch (Exception)
+                    {
+                        // Task was abandoned together with the transaction.
+                    }
+
                     continue;
                 }
 
