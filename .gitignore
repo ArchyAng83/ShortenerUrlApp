@@ -375,3 +375,6 @@ FodyWeavers.xsd
 # Project management files (internal)
 AGENTS.md
 todo.md
+
+# Internal documentation
+docs/
