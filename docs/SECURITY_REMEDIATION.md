@@ -892,8 +892,8 @@ grep -n "AddRateLimiter\|UseRateLimiter" ShortenerUrl.WebApi/Program.cs Shortene
 | Redis auth | ❌ | ✅ |
 | Rate limit logging | ❌ | ✅ |
 | Critical vulnerabilities | 5 | 0 |
-| High vulnerabilities | 8 | 0-1 |
-| Total remediation rate | — | ~90% |
+| High vulnerabilities | 8 | 0 |
+| Total remediation rate | — | ~100% |
 
 ---
 
