@@ -46,7 +46,7 @@ namespace ShortenerUrlApp.Tests.Integration
             {
                 userName = "it_" + Guid.NewGuid().ToString("N")[..10],
                 email = $"it_{Guid.NewGuid():N}@test.local",
-                password = "Passw0rd!#"
+                password = "Passw0rd!#Pass"
             });
 
             response.EnsureSuccessStatusCode();

@@ -5,5 +5,5 @@ namespace ShortenerUrlApp.Shared.DTOs
     public record RegisterDto(
         [Required] string UserName,
         [Required][EmailAddress] string Email,
-        [Required][MinLength(6)] string Password);
+        [Required][MinLength(12)] string Password);
 }

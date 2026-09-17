@@ -18,7 +18,7 @@ namespace ShortenerUrlApp.WebApi.Services
             {
                 UserName = dto.UserName,
                 Email = dto.Email,
-                EmailConfirmed = true
+                EmailConfirmed = false
             };
 
             var result = await userManager.CreateAsync(user, dto.Password);
@@ -35,10 +35,14 @@ namespace ShortenerUrlApp.WebApi.Services
         {
             var user = await userManager.FindByEmailAsync(dto.Email);
 
-            // Do not leak whether the email exists: same failure for unknown user and wrong password.
             if (user is null || !await userManager.CheckPasswordAsync(user, dto.Password))
             {
                 return AuthResultDto.Failure(["Invalid email or password."]);
+            }
+
+            if (!user.EmailConfirmed)
+            {
+                return AuthResultDto.Failure(["Email not confirmed. Check your inbox for the verification link."]);
             }
 
             return AuthResultDto.Success(GenerateToken(user));

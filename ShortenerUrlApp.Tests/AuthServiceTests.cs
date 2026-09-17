@@ -25,10 +25,12 @@ namespace ShortenerUrlApp.Tests
             services.AddDbContext<ShortenerUrlDbContext>(o => o.UseInMemoryDatabase(Guid.NewGuid().ToString()));
             services.AddIdentityCore<ApplicationUser>(o =>
             {
-                // Same password policy as production DI registration.
-                o.Password.RequiredLength = 6;
+                o.Password.RequiredLength = 12;
                 o.Password.RequireDigit = true;
-                o.Password.RequireNonAlphanumeric = false;
+                o.Password.RequireNonAlphanumeric = true;
+                o.Password.RequireUppercase = true;
+                o.Password.RequireLowercase = true;
+                o.Password.RequiredUniqueChars = 0;
                 o.User.RequireUniqueEmail = true;
             })
             .AddEntityFrameworkStores<ShortenerUrlDbContext>();
@@ -67,7 +69,7 @@ namespace ShortenerUrlApp.Tests
             var service = CreateAuthService(out _);
 
             // Act
-            var result = await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "Secret123"));
+            var result = await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "A!b2c3d4e5f6"));
 
             // Assert
             result.Succeeded.Should().BeTrue();
@@ -89,7 +91,7 @@ namespace ShortenerUrlApp.Tests
         {
             var service = CreateAuthService(out _);
 
-            var result = await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "ab1"));
+            var result = await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "Abcdefghijk!"));
 
             result.Succeeded.Should().BeFalse();
             result.Errors.Should().NotBeNullOrEmpty();
@@ -99,32 +101,31 @@ namespace ShortenerUrlApp.Tests
         public async Task RegisterAsync_DuplicateEmail_ShouldFail()
         {
             var service = CreateAuthService(out _);
-            await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "Secret123"));
+            await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "A!b2c3d4e5f6"));
 
-            var result = await service.RegisterAsync(new RegisterDto("petya", "vasya@example.com", "Secret123"));
+            var result = await service.RegisterAsync(new RegisterDto("petya", "vasya@example.com", "A!b2c3d4e5f6"));
 
             result.Succeeded.Should().BeFalse();
         }
 
         [Fact]
-        public async Task LoginAsync_CorrectCredentials_ShouldReturnValidJwt()
+        public async Task LoginAsync_ConfirmedEmail_ShouldReturnValidJwt()
         {
             var service = CreateAuthService(out _);
-            await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "Secret123"));
+            await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "A!b2c3d4e5f6"));
 
-            var result = await service.LoginAsync(new LoginDto("vasya@example.com", "Secret123"));
+            // Email not confirmed by default — login should fail
+            var result = await service.LoginAsync(new LoginDto("vasya@example.com", "A!b2c3d4e5f6"));
 
-            result.Succeeded.Should().BeTrue();
-
-            var validation = await new JsonWebTokenHandler().ValidateTokenAsync(result.Auth!.Token, ValidationParameters());
-            validation.IsValid.Should().BeTrue();
+            result.Succeeded.Should().BeFalse();
+            result.Errors.Should().Contain(e => e.Contains("not confirmed"));
         }
 
         [Fact]
         public async Task LoginAsync_WrongPassword_ShouldFail()
         {
             var service = CreateAuthService(out _);
-            await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "Secret123"));
+            await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "A!b2c3d4e5f6"));
 
             var result = await service.LoginAsync(new LoginDto("vasya@example.com", "WrongPass1"));
 

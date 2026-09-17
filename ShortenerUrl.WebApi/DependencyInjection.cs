@@ -108,10 +108,17 @@ var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[
             // Identity without UI/cookies: UserManager + EF stores + token providers.
             services.AddIdentityCore<ApplicationUser>(options =>
             {
-                options.Password.RequiredLength = 6;
+                options.Password.RequiredLength = 12;
                 options.Password.RequireDigit = true;
-                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequireNonAlphanumeric = true;
+                options.Password.RequireUppercase = true;
+                options.Password.RequireLowercase = true;
+                options.Password.RequiredUniqueChars = 0;
                 options.User.RequireUniqueEmail = true;
+
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.MaxFailedAccessAttempts = 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             })
             .AddEntityFrameworkStores<ShortenerUrlDbContext>()
             .AddDefaultTokenProviders();
