@@ -618,61 +618,29 @@ public class ClickSyncWorker(IServiceProvider serviceProvider, ILogger<ClickSync
 
 ---
 
-## REM-09: Добавление оптимистичной блокировки (Concurrency Token)
+## REM-09: Добавление оптимистичной блокировки (Concurrency Token) ✅
 
-### Проблема
-Нет `[Timestamp]` или `[ConcurrencyToken]` на `ShortenerUrl`. Lost update при конкурентных PUT.
-
-### Решение
+### Реализация
 
 #### 9.1 — `Entities/ShortenerUrl.cs`
 ```csharp
-public class ShortenerUrl
-{
-    // ... existing properties ...
-
-    [Timestamp]
-    public byte[]? RowVersion { get; set; }
-}
+public uint RowVersion { get; set; }
 ```
 
-#### 9.2 — `ShortenerUrlDbContext.cs` — убедиться что EF Core конфигурирует concurrency
-EF Core автоматически обрабатывает `[Timestamp]` атрибут. Миграция автоматически добавит `rowversion` столбец.
-
-#### 9.3 — `ShortenerUrlService.cs` — обработка DbUpdateConcurrencyException
+#### 9.2 — `Data/ShortenerUrlDbContext.cs`
 ```csharp
-public async Task<bool> UpdateUrlAsync(Guid id, string newLongUrl, string? userId, CancellationToken ct = default)
-{
-    var shortenerUrl = await context.ShortenerUrls
-        .FirstOrDefaultAsync(u => u.Id == id, ct);
-
-    if (shortenerUrl is null || shortenerUrl.UserId != userId)
-    {
-        return false;
-    }
-
-    shortenerUrl.LongUrl = newLongUrl;
-
-    try
-    {
-        await context.SaveChangesAsync(ct);
-    }
-    catch (DbUpdateConcurrencyException)
-    {
-        // Record was modified by another request — return false to indicate conflict
-        return false;
-    }
-
-    await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
-
-    return true;
-}
+entity.Property(x => x.RowVersion).IsRowVersion();
 ```
+PostgreSQL mapping: `uint` → `xid` column (auto-updating via transaction xmin).
 
-### Файлы для изменения
-- `ShortenerUrl.WebApi/Entities/ShortenerUrl.cs`
-- `ShortenerUrl.WebApi/Services/ShortenerUrlService.cs`
-- `ShortenerUrl.WebApi/Data/ShortenerUrlDbContext.cs` (миграция)
+#### 9.3 — `Data/Migrations/20260917010920_AddRowVersionToShortenerUrl.cs`
+Adds `xmin` column of type `xid` with `rowVersion: true`.
+
+#### 9.4 — `Services/ShortenerUrlService.cs`
+`TrySaveUrlChangesAsync(IEnumerable<ShortenerUrl>, CancellationToken)` — wraps `SaveChangesAsync` with `DbUpdateConcurrencyException` handling. On conflict, detaches affected entities and returns `false`. Used by:
+- `DeleteUrlAsync`
+- `UpdateUrlAsync`
+- `DeleteExpiredUrlsAsync` (uses `TrySaveUrlChangesAsync` returning `0` on conflict)
 
 ---
 
@@ -713,78 +681,58 @@ public string? LongUrl { get; init; }
 
 ---
 
-## REM-11: Исправление AllowedHosts и Host Header защиты
+## REM-11: Исправление AllowedHosts и Host Header защиты ✅
 
-### Проблема
-`AllowedHosts: "*"` — Host header attack, cache poisoning.
+### Реализация
 
-### Решение
-
-#### 11.1 — `appsettings.json`
-**Было:**
-```json
-"AllowedHosts": "*"
-```
-
-**Стало:**
+#### 11.1 — `appsettings.json` ✅
 ```json
 "AllowedHosts": ""
 ```
 > Пустая строка разрешает все хосты в development. В production установить конкретный домен: `"AllowedHosts": "shortener.example.com,api.shortener.example.com"`.
 
-#### 11.2 — `docker-compose.yml` — добавить переменную
+#### 11.2 — `docker-compose.yml` ✅
 ```yaml
-environment:
-  - ASPNETCORE_ALLOWEDHOSTS=${ALLOWED_HOSTS:-}
+- ASPNETCORE_ALLOWEDHOSTS=${ALLOWED_HOSTS:-}
 ```
 
-### Файлы для изменения
-- `ShortenerUrl.WebApi/appsettings.json`
-- `docker-compose.yml`
+### Статус: ✅ Принято и реализовано
 
 ---
 
-## REM-12: Усиление Redis безопасности
+## REM-12: Усиление Redis безопасности ✅
 
-### Проблема
-Redis без пароля и TLS. Любой в сети может читать/писать.
+### Реализация
 
-### Решение
-
-#### 12.1 — `docker-compose.yml` — добавить requirepass
+#### 12.1 — `docker-compose.yml` — requirepass ✅
 ```yaml
-redis:
-  image: redis:7-alpine
-  command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required} --appendonly yes
-  # ... rest unchanged
+command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required} --appendonly yes
 ```
 
-#### 12.2 — `docker-compose.yml` — обновить ConnectionStrings
+#### 12.2 — `docker-compose.yml` — ConnectionStrings с паролем ✅
 ```yaml
-environment:
-  - ConnectionStrings__Redis=redis://:${REDIS_PASSWORD}@redis:6379
+- ConnectionStrings__Redis=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
 ```
 
-#### 12.3 — `.env.example`
+#### 12.3 — `.env.example` ✅
 ```
 REDIS_PASSWORD=change-me-to-a-strong-redis-password
+REDIS_SSL=false
 ```
 
-#### 12.4 — `DependencyInjection.cs` — использовать SSL для Redis
+#### 12.4 — `DependencyInjection.cs` — SSL toggle ✅
 ```csharp
-services.AddSingleton<IConnectionMultiplexer>(_ =>
-{
-    var config = ConfigurationOptions.Parse(redisConnectionString);
-    config.Ssl = true; // Enable TLS
-    config.AbortOnConnectFail = true;
-    return ConnectionMultiplexer.Connect(config);
-});
+var config = ConfigurationOptions.Parse(redisConnectionString);
+config.Ssl = configuration.GetValue<bool>("Redis__Ssl");
+config.AbortOnConnectFail = true;
+return ConnectionMultiplexer.Connect(config);
 ```
+`Redis__Ssl` defaults to `false` (local dev), set to `true` in production.
 
-### Файлы для изменения
-- `docker-compose.yml`
-- `.env.example`
-- `ShortenerUrl.WebApi/DependencyInjection.cs`
+### Статус
+- Redis requirepass: ✅
+- Redis TLS/SSL: ✅ (toggleable via `Redis__Ssl` config)
+- Redis password in connection string: ✅
 
 ---
 
@@ -854,32 +802,30 @@ appsettings.Development.json
 
 ---
 
-## REM-15: Добавление логирования для Rate Limiting
+## REM-15: Добавление логирования для Rate Limiting ✅
 
-### Проблема
-При срабатывании rate limit пользователь получает 429 без объяснения причины.
-
-### Решение
+### Реализация
 
 #### `Program.cs`
 ```csharp
-app.Use((context, next) =>
+app.UseCors();
+app.UseRateLimiter();
+app.Use(async (context, next) =>
 {
+    await next();
     if (context.Response.StatusCode == StatusCodes.Status429TooManyRequests)
     {
-        // Log rate limit rejection
-        // Use ILogger injected via request services
         using var scope = context.RequestServices.CreateScope();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
         logger.LogWarning("Rate limit exceeded for {Path} from {RemoteIp}",
             context.Request.Path,
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
     }
-    return next();
 });
+app.UseAuthentication();
 ```
 
----
+### Статус: ✅ Принято и реализовано
 
 ## 📝 Порядок внедрения
 

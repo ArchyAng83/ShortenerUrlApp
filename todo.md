@@ -206,8 +206,13 @@
   - [x] QRCodeServiceTests (8 тестов: 4 service + 4 controller)
   - [x] ShortenerUrlOwnershipTests (6 тестов)
   - [x] GeoIpServiceTests (7 тестов)
+  - [x] ClickEventSyncWorkerTests (8 тестов)
+  - [x] ClickSyncWorkerTests (3 теста)
+  - [x] ExpiredLinksCleanupWorkerTests (3 теста)
+  - [x] ShortenerServicePersistenceTests (4 теста)
+  - [x] SharedContractTests
   - [x] Integration-тесты (WebApplicationFactory + Testcontainers) ← **СДЕЛАНО** (11 тестов, api/v1/urls + аналитика + QR + ownership)
-  - [x] Minimum 80% coverage report ← **СДЕЛАНО** (Cobertura: 80.11% линий, 140 тестов)
+  - [x] Minimum 80% coverage report ← **СДЕЛАНО** (Cobertura: 80.11% линий, 141 тест)
 - [x] **7.4** Настроить GitHub Actions
   - [x] Build + Test
   - [x] Docker build (API)
@@ -339,10 +344,10 @@
 
 | REM | Задача | Статус | Примечание |
 |---|---|---|---|
-| REM-09 | Concurrency token | 🟡 Требует миграции | Добавить [Timestamp] RowVersion в ShortenerUrl |
-| REM-11 | AllowedHosts | 🟡 Временно "*" | Нужно настроить для production без лома тестов |
-| REM-12 | Redis auth | 🟡 Требует docker-compose | requirepass + TLS для Redis |
-| REM-15 | Rate limit logging | 🟡 Минорная | Middleware для логирования 429 |
+| REM-09 | Concurrency token | ✅ Сделано | [Timestamp] RowVersion + TrySaveUrlChangesAsync |
+| REM-11 | AllowedHosts | ✅ Сделано | "" в appsettings + ASPNETCORE_ALLOWEDHOSTS env |
+| REM-12 | Redis auth | ✅ Сделано | requirepass + SSL toggle (Redis__Ssl) |
+| REM-15 | Rate limit logging | ✅ Сделано | Middleware для логирования 429 |
 
 ---
 
