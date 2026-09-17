@@ -9,11 +9,11 @@ using System.Text.RegularExpressions;
 
 namespace ShortenerUrlApp.WebApi.Controllers
 {
-[Authorize]
-[Route("api/v1/urls")]
-[ApiController]
-[EnableRateLimiting("global")]
-public partial class ShortenerUrlController(IShortenerUrlService shortenerService) : ControllerBase
+    [Authorize]
+    [Route("api/v1/urls")]
+    [ApiController]
+    [EnableRateLimiting("global")]
+    public partial class ShortenerUrlController(IShortenerUrlService shortenerService) : ControllerBase
     {
         // Codes that would collide with app routes (/{code} redirect vs /health, /api, /openapi, /scalar).
         private static readonly HashSet<string> ReservedAliases = new(StringComparer.OrdinalIgnoreCase)
