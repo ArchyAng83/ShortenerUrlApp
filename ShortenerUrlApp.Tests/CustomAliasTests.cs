@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Moq;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Data;
@@ -27,7 +28,7 @@ namespace ShortenerUrlApp.Tests
             var redis = new Mock<IConnectionMultiplexer>();
             redis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(cache.Object);
 
-            return (new ShortenerUrlService(db, redis.Object), cache);
+            return (new ShortenerUrlService(db, redis.Object, new Mock<ILogger<ShortenerUrlService>>().Object), cache);
         }
 
         private static ShortenerUrl Seed(

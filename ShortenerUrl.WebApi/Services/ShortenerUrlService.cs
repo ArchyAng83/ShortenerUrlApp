@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ShortenerUrlApp.WebApi.Constants;
 using ShortenerUrlApp.WebApi.Data;
 using ShortenerUrlApp.WebApi.Entities;
 using StackExchange.Redis;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -14,6 +16,7 @@ namespace ShortenerUrlApp.WebApi.Services
     public class ShortenerUrlService(
         ShortenerUrlDbContext context,
         IConnectionMultiplexer redis,
+        ILogger<ShortenerUrlService> logger,
         IHttpContextAccessor? httpContextAccessor = null) : IShortenerUrlService
     {
         //Redis для обработки 10к кликов в секунду
@@ -52,7 +55,7 @@ namespace ShortenerUrlApp.WebApi.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Cache eviction failed for {shortenerUrl.ShortCode}: {ex.Message}");
+                logger.LogWarning(ex, "Cache eviction failed for {ShortCode}", shortenerUrl.ShortCode);
             }
 
             return true;
@@ -149,7 +152,7 @@ namespace ShortenerUrlApp.WebApi.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"RecordClickAsync failed for {shortCode}: {ex.Message}");
+                logger.LogWarning(ex, "RecordClickAsync failed for {ShortCode}", shortCode);
             }
         }
 
@@ -181,8 +184,7 @@ namespace ShortenerUrlApp.WebApi.Services
             }
             catch (Exception ex)
             {
-                // Analytics must never fail the redirect.
-                Console.WriteLine($"QueueClickEvent failed: {ex.Message}");
+                logger.LogWarning(ex, "QueueClickEvent failed");
             }
         }
 
@@ -200,6 +202,9 @@ namespace ShortenerUrlApp.WebApi.Services
             int? maxClicks = null,
             CancellationToken ct = default)
         {
+            if (!IsUrlSafe(longUrl))
+                throw new ArgumentException("URL is not safe or is a private/internal address.");
+
             string code;
             var isCustomAlias = !string.IsNullOrWhiteSpace(customAlias);
 
@@ -280,6 +285,9 @@ namespace ShortenerUrlApp.WebApi.Services
 
         public async Task<bool> UpdateUrlAsync(Guid id, string newLongUrl, string? userId, CancellationToken ct = default)
         {
+            if (!IsUrlSafe(newLongUrl))
+                return false;
+
             var shortenerUrl = await context.ShortenerUrls
                 .FirstOrDefaultAsync(u => u.Id == id, ct);
 
@@ -373,6 +381,47 @@ namespace ShortenerUrlApp.WebApi.Services
             }
 
             return sb.ToString();
+        }
+
+        public static bool IsUrlSafe(string longUrl)
+        {
+            if (!Uri.TryCreate(longUrl, UriKind.Absolute, out var uriResult)
+                || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
+                return false;
+
+            return IsPublicAddress(uriResult);
+        }
+
+        private static bool IsPublicAddress(Uri uri)
+        {
+            if (!IPAddress.TryParse(uri.Host, out var ip))
+                return true;
+
+            if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.IPv6Loopback)
+                || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.IsIPv6SiteLocal)
+                return false;
+
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+                && ip.IsIPv4MappedToIPv6)
+            {
+                ip = ip.MapToIPv4();
+            }
+
+            var bytes = ip.GetAddressBytes();
+            if (bytes.Length == 4)
+            {
+                if (bytes[0] == 0 || bytes[0] == 10) return false;
+                if (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) return false;
+                if (bytes[0] == 127) return false;
+                if (bytes[0] == 169 && bytes[1] == 254) return false;
+                if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return false;
+                if (bytes[0] == 192 && bytes[1] == 168) return false;
+                if (bytes[0] == 198 && bytes[1] == 18) return false;
+                if (bytes[0] >= 224) return false;
+                if (uri.Port != 80 && uri.Port != 443 && uri.Port != -1) return false;
+            }
+
+            return true;
         }
     }
 }

@@ -12,6 +12,7 @@ namespace ShortenerUrlApp.Shared.DTOs
     {
         [Required]
         [HttpUrl]
+        [StringLength(2048, ErrorMessage = "URL must not exceed 2048 characters")]
         public string? LongUrl { get; init; }
 
         // Optional user-chosen short code. Null/empty means "generate a random one".

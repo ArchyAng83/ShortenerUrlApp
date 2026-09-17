@@ -359,6 +359,10 @@ MigrationBackup/
 # .env files
 .env
 
+# App configuration with secrets
+appsettings.Development.json
+appsettings.Production.json
+
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 

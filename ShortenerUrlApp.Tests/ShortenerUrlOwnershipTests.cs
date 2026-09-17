@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Moq;
 using ShortenerUrlApp.WebApi.Data;
 using ShortenerUrlApp.WebApi.Entities;
@@ -25,7 +26,7 @@ namespace ShortenerUrlApp.Tests
             var redis = new Mock<IConnectionMultiplexer>();
             redis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(cache.Object);
 
-            return new ShortenerUrlService(db, redis.Object);
+            return new ShortenerUrlService(db, redis.Object, new Mock<ILogger<ShortenerUrlService>>().Object);
         }
 
         private static ShortenerUrl Seed(ShortenerUrlDbContext db, string? userId, string shortCode = "aaaa111")
@@ -149,7 +150,7 @@ namespace ShortenerUrlApp.Tests
             var redis = new Mock<IConnectionMultiplexer>();
             redis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(cache.Object);
 
-            var service = new ShortenerUrlService(db, redis.Object);
+            var service = new ShortenerUrlService(db, redis.Object, new Mock<ILogger<ShortenerUrlService>>().Object);
 
             await service.DeleteUrlAsync(url.Id, "owner", CancellationToken.None);
 

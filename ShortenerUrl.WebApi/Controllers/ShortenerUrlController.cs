@@ -122,13 +122,7 @@ public partial class ShortenerUrlController(IShortenerUrlService shortenerServic
 
         private static bool CheckUrl(string longUrl)
         {
-            if (!Uri.TryCreate(longUrl, UriKind.Absolute, out var uriResult)
-                || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps))
-            {
-                return false;
-            }
-
-            return true;
+            return ShortenerUrlService.IsUrlSafe(longUrl);
         }
 
         [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]

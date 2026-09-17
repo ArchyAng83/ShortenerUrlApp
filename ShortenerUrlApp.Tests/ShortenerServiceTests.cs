@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Moq;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Data;
@@ -43,7 +44,7 @@ namespace ShortenerUrlApp.Tests
                         .ReturnsAsync("https://google.com");
             mockRedis.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>())).Returns(mockDatabase.Object);
 
-            var service = new ShortenerUrlService(db, mockRedis.Object);
+            var service = new ShortenerUrlService(db, mockRedis.Object, new Mock<ILogger<ShortenerUrlService>>().Object);
 
             var result = await service.GetLongUrlAsync("abc123");
 
@@ -69,7 +70,7 @@ namespace ShortenerUrlApp.Tests
             });
             await db.SaveChangesAsync();
 
-            var service = new ShortenerUrlService(db, mockRedis.Object);
+            var service = new ShortenerUrlService(db, mockRedis.Object, new Mock<ILogger<ShortenerUrlService>>().Object);
 
             var result = await service.GetLongUrlAsync("expired");
 
