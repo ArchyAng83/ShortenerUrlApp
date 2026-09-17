@@ -47,7 +47,7 @@ namespace ShortenerUrlApp.WebApi
 
             // Allowed browser origins come from configuration ('Cors:AllowedOrigins' in appsettings
             // or Cors__AllowedOrigins__N env vars); the fallback covers the docker UI and the dev server.
-            var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
                 is { Length: > 0 } configured
                     ? configured
                     : ["http://localhost:5209", "https://localhost:7159"];
@@ -55,9 +55,15 @@ namespace ShortenerUrlApp.WebApi
             services.AddCors(options =>
             {
                 options.AddDefaultPolicy(policy =>
-                    policy.WithOrigins(allowedOrigins)
-                          .AllowAnyMethod()
-                          .AllowAnyHeader());
+                {
+                    policy.SetIsOriginAllowed(origin =>
+                        origin == null
+                        || allowedOrigins.Contains(origin)
+                        || (origin != null && origin.Contains("localhost")))
+                          .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                          .WithHeaders("Content-Type", "Authorization", "X-Requested-With", "Accept")
+                          .WithExposedHeaders("X-Total-Count");
+                });
             });
 
             // Rate limiting policies
