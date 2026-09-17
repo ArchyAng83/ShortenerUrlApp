@@ -41,9 +41,13 @@ namespace ShortenerUrlApp.WebApi
                 throw new InvalidOperationException(
                     "Redis connection string is not configured. Set 'ConnectionStrings__Redis' or configure appsettings.");
             }
-            // Lazy connect so EF Core design-time tools and app startup do not
-            // require Redis to be reachable until the first cache access.
-            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
+            services.AddSingleton<IConnectionMultiplexer>(_ =>
+            {
+                var config = ConfigurationOptions.Parse(redisConnectionString);
+                config.Ssl = configuration.GetValue<bool>("Redis__Ssl");
+                config.AbortOnConnectFail = true;
+                return ConnectionMultiplexer.Connect(config);
+            });
 
             // Allowed browser origins come from configuration ('Cors:AllowedOrigins' in appsettings
             // or Cors__AllowedOrigins__N env vars); the fallback covers the docker UI and the dev server.

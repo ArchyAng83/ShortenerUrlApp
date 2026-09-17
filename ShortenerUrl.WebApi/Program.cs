@@ -40,6 +40,18 @@ app.Use(async (context, next) =>
 
 app.UseCors();
 app.UseRateLimiter();
+app.Use(async (context, next) =>
+{
+    await next();
+    if (context.Response.StatusCode == StatusCodes.Status429TooManyRequests)
+    {
+        using var scope = context.RequestServices.CreateScope();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogWarning("Rate limit exceeded for {Path} from {RemoteIp}",
+            context.Request.Path,
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+    }
+});
 app.UseAuthentication();
 app.UseAuthorization();
 

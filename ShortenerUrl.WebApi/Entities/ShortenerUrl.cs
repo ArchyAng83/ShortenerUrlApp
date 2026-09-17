@@ -12,6 +12,7 @@ namespace ShortenerUrlApp.WebApi.Entities
         public string ShortCode { get; set; } = string.Empty;
         public DateTime CreateAt { get; set; } = DateTime.UtcNow;
         public int CountOfClick { get; set; } = 0;
+        public uint RowVersion { get; set; }
 
         // UTC deadline after which the link stops redirecting (410 Gone). Null = never expires.
         public DateTime? ExpiresAt { get; set; }

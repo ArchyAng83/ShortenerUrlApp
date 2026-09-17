@@ -22,6 +22,7 @@ namespace ShortenerUrlApp.WebApi.Data
                 // Fix the historical "SortenerUrls" typo from the old MySQL migration.
                 entity.ToTable("ShortenerUrls");
                 entity.HasIndex(x => x.ShortCode).IsUnique();
+                entity.Property(x => x.RowVersion).IsRowVersion();
 
                 // ShortCode stores generated codes (7 chars) AND custom aliases (up to 20).
                 // Generated codes stay at Constant.MAX_LENGTH_SHORT_URL and aliases have a

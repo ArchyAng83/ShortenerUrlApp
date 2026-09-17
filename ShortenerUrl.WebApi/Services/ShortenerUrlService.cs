@@ -43,7 +43,8 @@ namespace ShortenerUrlApp.WebApi.Services
             }
 
             context.ShortenerUrls.Remove(shortenerUrl);
-            await context.SaveChangesAsync(ct);
+            if (!await TrySaveUrlChangesAsync([shortenerUrl], ct))
+                return false;
 
             // Evict Redis keys after DB deletion to avoid inconsistency if SaveChangesAsync fails.
             // Cache deletion failures are non-critical; the DB is the source of truth.
@@ -298,7 +299,8 @@ namespace ShortenerUrlApp.WebApi.Services
             }
 
             shortenerUrl.LongUrl = newLongUrl;
-            await context.SaveChangesAsync(ct);
+            if (!await TrySaveUrlChangesAsync([shortenerUrl], ct))
+                return false;
 
             await _cache.KeyDeleteAsync($"url:{shortenerUrl.ShortCode}");
 
@@ -317,7 +319,8 @@ namespace ShortenerUrlApp.WebApi.Services
                 return 0;
 
             context.ShortenerUrls.RemoveRange(expired);
-            await context.SaveChangesAsync(ct);
+            if (!await TrySaveUrlChangesAsync(expired, ct))
+                return 0;
 
             // Evict Redis keys after DB deletion to avoid inconsistency if SaveChangesAsync fails.
             foreach (var url in expired)
@@ -328,6 +331,22 @@ namespace ShortenerUrlApp.WebApi.Services
             }
 
             return expired.Count;
+        }
+
+        private async Task<bool> TrySaveUrlChangesAsync(IEnumerable<ShortenerUrl> urls, CancellationToken ct)
+        {
+            try
+            {
+                await context.SaveChangesAsync(ct);
+                return true;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                foreach (var url in urls)
+                    context.Entry(url).State = EntityState.Detached;
+
+                return false;
+            }
         }
 
         public async Task<int> GetPendingClicksAsync(string shortCode, CancellationToken ct = default)
