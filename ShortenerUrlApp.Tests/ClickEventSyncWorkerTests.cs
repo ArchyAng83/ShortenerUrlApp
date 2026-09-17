@@ -14,8 +14,7 @@ namespace ShortenerUrlApp.Tests
     {
         private const string Key = "click-events:abc123";
 
-        private static Mock<IConnectionMultiplexer> BuildRedis(
-            RedisKey[] keys, RedisValue[] range, bool execute = true)
+        private static Mock<ITransaction> BuildTransaction(RedisValue[] range, bool execute = true)
         {
             var tx = new Mock<ITransaction>();
             tx.Setup(t => t.ListRangeAsync(It.IsAny<RedisKey>(), It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CommandFlags>()))
@@ -24,9 +23,24 @@ namespace ShortenerUrlApp.Tests
               .ReturnsAsync(true);
             tx.Setup(t => t.ExecuteAsync(It.IsAny<CommandFlags>()))
               .ReturnsAsync(execute);
+            return tx;
+        }
 
+        private static Mock<IConnectionMultiplexer> BuildRedis(
+            RedisKey[] keys, RedisValue[] range, bool execute = true)
+        {
+            return BuildRedis(keys, new[] { BuildTransaction(range, execute) });
+        }
+
+        // Transactions are handed out in order — one per key in the scan — letting tests
+        // reproduce a per-key MULTI/EXEC outcome (success, CONCURRENTWRITE, abandoned throw).
+        private static Mock<IConnectionMultiplexer> BuildRedis(
+            RedisKey[] keys, Mock<ITransaction>[] transactions)
+        {
+            var queue = new Queue<Mock<ITransaction>>(transactions);
             var db = new Mock<IDatabase>();
-            db.Setup(d => d.CreateTransaction(It.IsAny<object>())).Returns(tx.Object);
+            db.Setup(d => d.CreateTransaction(It.IsAny<object>()))
+              .Returns(() => queue.Dequeue().Object);
 
             var server = new Mock<IServer>();
             server.Setup(s => s.Keys(It.IsAny<int>(), It.IsAny<RedisValue>(), It.IsAny<int>(), It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CommandFlags>()))
@@ -46,7 +60,8 @@ namespace ShortenerUrlApp.Tests
         private static ServiceProvider BuildProvider(
             Mock<IConnectionMultiplexer> redis,
             Mock<IGeoIpService> geo,
-            bool seedUrl = true)
+            bool seedUrl = true,
+            params string[] additionalCodes)
         {
             // Capture the store name once: AddDbContext re-applies the options action per
             // scope, so a Guid inside the lambda would spawn a fresh InMemory store per scope.
@@ -68,6 +83,15 @@ namespace ShortenerUrlApp.Tests
                     LongUrl = "https://example.com",
                     ShortCode = "abc123"
                 });
+                foreach (var code in additionalCodes)
+                {
+                    ctx.ShortenerUrls.Add(new ShortenerUrl
+                    {
+                        Id = Guid.NewGuid(),
+                        LongUrl = "https://example.org",
+                        ShortCode = code
+                    });
+                }
                 ctx.SaveChanges();
             }
 
@@ -187,6 +211,59 @@ namespace ShortenerUrlApp.Tests
             await SyncAsync(provider);
 
             (await GetSavedEvents(provider)).Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task SyncAsync_ShouldStillProcessOtherKeys_WhenOneKeyHitsCONCURRENTWRITE()
+        {
+            const string json =
+                """{"clickedAt":"2026-09-17T12:00:00Z","ipAddress":"81.2.69.142","userAgent":"UA","referrer":"ref"}""";
+            var failing = BuildTransaction(new[] { (RedisValue)json }, execute: false);
+            var ok = BuildTransaction(new[] { (RedisValue)json }, execute: true);
+
+            var redis = BuildRedis(
+                new[] { (RedisKey)"click-events:abc123", (RedisKey)"click-events:def456" },
+                new[] { failing, ok });
+            var geo = BuildGeo();
+
+            using var provider = BuildProvider(redis, geo, additionalCodes: "def456");
+            await SyncAsync(provider);
+
+            // The CONCURRENTWRITE key keeps its list untouched in Redis (nothing drained for it),
+            // while the healthy key in the same scan must still reach PostgreSQL.
+            var events = await GetSavedEvents(provider);
+            events.Should().HaveCount(1);
+        }
+
+        [Fact]
+        public async Task SyncAsync_ShouldNotAbortTick_WhenAbandonedRangeTaskThrows()
+        {
+            const string json =
+                """{"clickedAt":"2026-09-17T12:00:00Z","ipAddress":"81.2.69.142","userAgent":"UA","referrer":"ref"}""";
+
+            // Simulates a StackExchange.Redis version that faults the task queued into an
+            // aborted transaction: ExecuteAsync -> false, then awaiting rangeTask throws.
+            var throwing = new Mock<ITransaction>();
+            throwing.Setup(t => t.ListRangeAsync(It.IsAny<RedisKey>(), It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CommandFlags>()))
+                    .ThrowsAsync(new RedisException("Command was abandoned"));
+            throwing.Setup(t => t.KeyDeleteAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+                    .ReturnsAsync(true);
+            throwing.Setup(t => t.ExecuteAsync(It.IsAny<CommandFlags>()))
+                    .ReturnsAsync(false);
+
+            var ok = BuildTransaction(new[] { (RedisValue)json }, execute: true);
+
+            var redis = BuildRedis(
+                new[] { (RedisKey)"click-events:abc123", (RedisKey)"click-events:def456" },
+                new[] { throwing, ok });
+            var geo = BuildGeo();
+
+            using var provider = BuildProvider(redis, geo, additionalCodes: "def456");
+            await SyncAsync(provider);
+
+            // The swallow must not terminate the tick: the healthy key still drains.
+            var events = await GetSavedEvents(provider);
+            events.Should().HaveCount(1);
         }
 
         [Fact]
