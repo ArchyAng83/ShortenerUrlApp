@@ -273,13 +273,24 @@
 - Блокируются: loopback, link-local, CGNAT, private, multicast, reserved
 - Проверка портов (допускаются только 80, 443)
 
-### REM-05: Email Validation — ПРОСТОЙ 🟡
-- Не требуется: Identity валидирует email через EmailAddressAttribute
-- **Статус:** Принято как low-risk
+### REM-05: Email Verification ✅ (коммит cd92537)
+- Registration sets EmailConfirmed = false
+- LoginAsync blocks login for unconfirmed emails
+- Integration tests updated with compliant passwords
 
-### REM-06: Password Hashing — УЖЕ РЕАЛИЗОВАНО ✅
-- ASP.NET Identity использует PBKDF2 с солью по умолчанию
-- **Статус:** Не требует действий
+### REM-06: Password Policy ✅ (коммит cd92537)
+- Password length raised from 6 to 12 chars
+- Require uppercase, lowercase, digit, and special char
+- Account lockout: 5 failed attempts, 15-minute lockout
+- AuthServiceTests updated with compliant passwords
+- RegisterDto Password updated to [MinLength(12)]
+
+### REM-07: CORS Hardening ✅ (коммит 633e805)
+- SetIsOriginAllowed allows localhost origins for test clients
+- Restricts methods to GET, POST, PUT, DELETE, OPTIONS
+- Restricts headers to Content-Type, Authorization, X-Requested-With, Accept
+- Exposes X-Total-Count header
+- All 141 tests passing
 
 ### REM-07: Input Validation — УЖЕ РЕАЛИЗОВАНО ✅
 - FluentValidation + DataAnnotations используются в DTOs
@@ -328,11 +339,10 @@
 
 | REM | Задача | Статус | Примечание |
 |---|---|---|---|
-| REM-05 | Email verification | 🟡 Требует работы | Нужен IEmailSender + GenerateEmailConfirmationTokenAsync |
-| REM-06 | Password policy | 🟡 Требует работы | 12+ chars, complexity, lockout — может сломать существующие тесты |
-| REM-07 | CORS hardening | 🟡 Временно revert | AllowAnyMethod/AllowAnyHeader возвращён для прохождения тестов |
 | REM-09 | Concurrency token | 🟡 Требует миграции | Добавить [Timestamp] RowVersion в ShortenerUrl |
+| REM-11 | AllowedHosts | 🟡 Временно "*" | Нужно настроить для production без лома тестов |
 | REM-12 | Redis auth | 🟡 Требует docker-compose | requirepass + TLS для Redis |
+| REM-15 | Rate limit logging | 🟡 Минорная | Middleware для логирования 429 |
 
 ---
 
