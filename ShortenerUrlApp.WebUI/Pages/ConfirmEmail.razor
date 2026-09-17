@@ -1,0 +1,77 @@
+@page "/confirm-email"
+@attribute [AllowAnonymous]
+
+<PageTitle>Confirm email — ShortenerUrl</PageTitle>
+
+<MudGrid Justify="Justify.Center" Class="mt-10">
+    <MudItem xs="12" sm="8" md="5" lg="4">
+        <MudCard Elevation="6">
+            <MudCardContent Class="pa-6 text-center">
+                @if (_busy)
+                {
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                    <MudText Typo="Typo.body1" Class="mt-3">Confirming your email…</MudText>
+                }
+                else if (_succeeded == true)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.MarkEmailRead" Color="Color.Success" Size="Size.Large" />
+                    <MudText Typo="Typo.h5" Class="mt-3">Email confirmed</MudText>
+                    <MudText Typo="Typo.body2" Class="mt-1">
+                        Your account is ready. You can sign in now.
+                    </MudText>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Size="Size.Large"
+                               Href="/login"
+                               Class="mt-5">
+                        Sign in
+                    </MudButton>
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Color="Color.Error" Size="Size.Large" />
+                    <MudText Typo="Typo.h5" Class="mt-3">Confirmation failed</MudText>
+                    <MudText Typo="Typo.body2" Class="mt-1">@_error</MudText>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               Href="/register"
+                               Class="mt-5">
+                        Create an account
+                    </MudButton>
+                }
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "email")]
+    public string? Email { get; set; }
+
+    [Parameter, SupplyParameterFromQuery(Name = "token")]
+    public string? Token { get; set; }
+
+    [Inject]
+    private AuthService AuthApi { get; set; } = null!;
+
+    private bool _busy = true;
+    private bool? _succeeded;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Email) || string.IsNullOrWhiteSpace(Token))
+        {
+            _succeeded = false;
+            _error = "The confirmation link is missing its email or token.";
+            _busy = false;
+            return;
+        }
+
+        var result = await AuthApi.ConfirmEmailAsync(new EmailConfirmationDto(Email, Token));
+
+        _succeeded = result.Succeeded;
+        _error = result.Errors.FirstOrDefault() ?? "The email confirmation token is invalid or has expired.";
+        _busy = false;
+    }
+}

@@ -36,5 +36,16 @@ namespace ShortenerUrlApp.WebApi.Controllers
 
             return Ok(result.Auth);
         }
+
+        [HttpPost("confirm-email")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> ConfirmEmailAsync([FromBody] EmailConfirmationDto dto, CancellationToken ct)
+        {
+            var confirmed = await authService.ConfirmEmailAsync(dto, ct);
+
+            return confirmed
+                ? Ok()
+                : BadRequest(new[] { "Invalid or expired email confirmation token." });
+        }
     }
 }

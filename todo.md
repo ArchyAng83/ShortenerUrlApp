@@ -250,6 +250,18 @@
 
 ---
 
+## Follow-up аудита (2026-09-17)
+
+> Итоги: полный перезапуск Docker-стека, живое e2e подтверждения email, 146 тестов.
+
+- **Пароль 6 → 12 → 10**: по запросу пользователя минимум снижен до 10 символов (Identity, RegisterDto, Register.razor, тесты, docs).
+- **Страница `/confirm-email`** в WebUI (MudBlazor, `[AllowAnonymous]`, `[SupplyParameterFromQuery]`, статус + «Sign in») — ссылка из `LoggingEmailSender` больше не 404.
+- **Integration-тесты confirm-email** (Testcontainers, +3): логин до подтверждения → 401; после → OK; невалидный токен → 400. Итого **146/146**.
+- **Docker-стек**: `.env` собран по `.env.example` (redis/jwt секреты сгенерированы; `ASPNETCORE_ENVIRONMENT=Development` — в Production `UseHttpsRedirection` ломал healthcheck над HTTP); `ConnectionStrings__Redis` → comma-формат + `abortConnect=false` (иначе crash-loop); `AbortOnConnectFail=true` убран из DI.
+- **Живое e2e** (Playwright vs docker): register → ссылка в логах API → `/confirm-email` показывает «Email confirmed» → login проходит → dashboard.
+
+---
+
 ## Аудит безопасности (2026-09-17)
 
 > Полный аудит выполнен через context7 — найдено 31 уязвимость, сгруппированных в 15 ремедиаций (REM).
@@ -267,10 +279,10 @@
 - Отключено в Testing (избежание redirect loops)
 
 ### REM-03: Rate Limiting ✅ (коммит 2495650)
-- Добавлены FixedWindow лимиты для: global, auth, redirect, url_create, analytics
-- Лимит auth = 100 req/min, url_create = 50 req/hour, redirect = 100 req/min
-- [EnableRateLimiting] атрибуты на контроллерах: AuthController, ShortenerUrlController (POST), AnalyticsController, QRCodeController
-- EnableRateLimiting снят с класса ShortenerUrlController (GET-запросы не требуют ограничения url_create)
+- Добавлены FixedWindow лимиты: global, auth, redirect, url_create, analytics
+- Лимиты приведены к SECURITY_REMEDIATION.md: auth = 5/15 мин, redirect = 30/мин, url_create = 20/час, analytics = 10/мин; переопределение через `RateLimiting:*` env
+- `[EnableRateLimiting("url_create")]` только на write-операциях контроллера (POST/PUT/DELETE); класс — `global` (GET-чтение не жжёт лимит 20/час — иначе Dashboard с поллингом 10с ловит 429)
+- [EnableRateLimiting] атрибуты на контроллерах: AuthController (вкл. confirm-email), ShortenerUrlController, AnalyticsController, QRCodeController
 
 ### REM-04: SSRF Protection ✅ (коммит f3f97e2)
 - Добавлен IsPublicAddress в ShortenerUrlController.CheckUrl
@@ -278,24 +290,27 @@
 - Блокируются: loopback, link-local, CGNAT, private, multicast, reserved
 - Проверка портов (допускаются только 80, 443)
 
-### REM-05: Email Verification ✅ (коммит cd92537)
+### REM-05: Email Verification ✅
 - Registration sets EmailConfirmed = false
 - LoginAsync blocks login for unconfirmed emails
-- Integration tests updated with compliant passwords
+- `POST /api/v1/auth/confirm-email` + `EmailConfirmationDto`, токен через `GenerateEmailConfirmationTokenAsync`
+- `LoggingEmailSender : IEmailSender<ApplicationUser>` логирует ссылку `{AppBaseUrl}/confirm-email?email=...&token=...`
+- Blazor-страница `/confirm-email` (WebUI) — подтверждение по email+token из query, ссылка на /login
+- Integration-тесты (2026-09-17): Login_UnconfirmedEmail_Returns401, ConfirmEmail_ThenLogin_Succeeds, ConfirmEmail_InvalidToken_Returns400; итого 146 тестов
 
-### REM-06: Password Policy ✅ (коммит cd92537)
-- Password length raised from 6 to 12 chars
-- Require uppercase, lowercase, digit, and special char
+### REM-06: Password Policy ✅
+- Password length raised to 10 chars (2026-09-17: 12 → 10, все точки: Identity, RegisterDto, Register.razor, тесты)
+- Require uppercase, lowercase, digit, special char; RequiredUniqueChars = 3
 - Account lockout: 5 failed attempts, 15-minute lockout
 - AuthServiceTests updated with compliant passwords
-- RegisterDto Password updated to [MinLength(12)]
+- RegisterDto Password updated to `[StringLength(128, MinimumLength = 10)]`
 
-### REM-07: CORS Hardening ✅ (коммит 633e805)
-- SetIsOriginAllowed allows localhost origins for test clients
+### REM-07: CORS Hardening ✅
+- Белый список origin'ов из `Cors:AllowedOrigins` (env `Cors__AllowedOrigins__N`), без fallback/localhost
 - Restricts methods to GET, POST, PUT, DELETE, OPTIONS
 - Restricts headers to Content-Type, Authorization, X-Requested-With, Accept
 - Exposes X-Total-Count header
-- All 141 tests passing
+- All 146 tests passing
 
 ### REM-07: Input Validation — УЖЕ РЕАЛИЗОВАНО ✅
 - FluentValidation + DataAnnotations используются в DTOs
@@ -346,7 +361,7 @@
 |---|---|---|---|
 | REM-09 | Concurrency token | ✅ Сделано | [Timestamp] RowVersion + TrySaveUrlChangesAsync |
 | REM-11 | AllowedHosts | ✅ Сделано | "" в appsettings + ASPNETCORE_ALLOWEDHOSTS env |
-| REM-12 | Redis auth | ✅ Сделано | requirepass + SSL toggle (Redis__Ssl) |
+| REM-12 | Redis auth | ✅ Сделано | requirepass + SSL toggle (Redis__Ssl). 2026-09-17: ConnectionStrings__Redis переведён на comma-формат (`redis:6379,password=...,abortConnect=false,...`) — URL-формат `redis://:pass@host` не коннектился в StackExchange.Redis; `abortConnect=false` убирает crash-loop при транзиентном сбое Redis |
 | REM-15 | Rate limit logging | ✅ Сделано | Middleware для логирования 429 |
 
 ---

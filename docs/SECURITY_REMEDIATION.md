@@ -99,7 +99,9 @@ if (KnownWeakSecrets.Contains(jwtSecret))
 
 ---
 
-## REM-02: Включение HTTPS и защита транспорта
+## REM-02: Включение HTTPS и защита транспорта ⚠️ Частично
+
+> Статус аудита 2026-09-17: `UseHsts`/`UseHttpsRedirection` включены вне Development, 5 security headers на месте. HTTPS **в контейнере** (2.2–2.4) сознательно НЕ реализован: plain HTTP на `:8080` внутри контейнера + TLS termination на reverse proxy/ingress — самоподписанный сертификат в Kestrel ломает healthcheck (`http://localhost:8080/health`) и приём доверительных клиентов.
 
 ### Проблема
 `//app.UseHttpsRedirection();` закомментирован. Docker служит на `http://+:8080`. JWT и пароли передаются plaintext.
@@ -180,7 +182,9 @@ app.Use(async (context, next) =>
 
 ---
 
-## REM-03: Добавление Rate Limiting
+## REM-03: Добавление Rate Limiting ✅
+
+> Статус аудита 2026-09-17: реализовано. Лимиты по документу (auth 5/15мин, redirect 30/мин, url_create 20/час, analytics 10/мин); переопределение через `RateLimiting:*` env vars.
 
 ### Проблема
 Нет rate limiting ни на одном эндпоинте. Позволяет brute-force логинов, credential stuffing и spam.
@@ -402,7 +406,9 @@ public static bool IsUrlSafe(string longUrl)
 
 ---
 
-## REM-05: Включение email verification
+## REM-05: Включение email verification ✅
+
+> Статус аудита 2026-09-17: `EmailConfirmed = false` + блокировка логина + флоу подтверждения (`POST /api/v1/auth/confirm-email`, `LoggingEmailSender` + `GenerateEmailConfirmationTokenAsync`). Ссылка логируется и отправляется через `IEmailSender`.
 
 ### Проблема
 `EmailConfirmed = true` при регистрации. Любой может создать аккаунт с произвольной почтой.
@@ -490,7 +496,7 @@ services.AddIdentityCore<ApplicationUser>(options =>
 ```csharp
 services.AddIdentityCore<ApplicationUser>(options =>
 {
-    options.Password.RequiredLength = 12;
+    options.Password.RequiredLength = 10;
     options.Password.RequireDigit = true;
     options.Password.RequireNonAlphanumeric = true;
     options.Password.RequireUppercase = true;
@@ -508,7 +514,7 @@ services.AddIdentityCore<ApplicationUser>(options =>
 #### 6.2 — `RegisterDto.cs` — добавить валидацию длины пароля
 ```csharp
 [Required]
-[StringLength(128, MinimumLength = 12)]
+[StringLength(128, MinimumLength = 10)]
 public string? Password { get; init; }
 ```
 
@@ -518,7 +524,9 @@ public string? Password { get; init; }
 
 ---
 
-## REM-07: Усиление CORS
+## REM-07: Усиление CORS ✅
+
+> Статус аудита 2026-09-17: ограничены методы/заголовки, убран hardcoded localhost fallback (пустой массив → CORS отключён без конфигурации).
 
 ### Проблема
 `AllowAnyMethod() + AllowAnyHeader()` — слишком разрешительный. Fallback содержит хардкод localhost.
@@ -567,7 +575,9 @@ var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[
 
 ---
 
-## REM-08: Замена Console.WriteLine на ILogger
+## REM-08: Замена Console.WriteLine на ILogger ✅
+
+> Статус аудита 2026-09-17: все `Console.WriteLine` заменены на `ILogger` (ShortenerUrlService, ClickSyncWorker, ClickEventSyncWorker, ExpiredLinksCleanupWorker, ApplyMigrations).
 
 ### Проблема
 `Console.WriteLine` с деталями ошибок в stdout контейнера. Инфо-леак и отсутствие структурированного логгирования.
@@ -701,6 +711,8 @@ public string? LongUrl { get; init; }
 ---
 
 ## REM-12: Усиление Redis безопасности ✅
+
+> Статус аудита 2026-09-17: добавлен маппинг `Redis__Ssl=${REDIS_SSL:-false}` в docker-compose — переключатель SSL теперь действительно влияет на конфигурацию клиента Redis.
 
 ### Реализация
 
@@ -884,7 +896,7 @@ grep -n "AddRateLimiter\|UseRateLimiter" ShortenerUrl.WebApi/Program.cs Shortene
 | Rate limiting | 0 endpoints | 5 policies |
 | SSRF protection | ❌ | ✅ |
 | Email verification | ❌ | ✅ |
-| Password policy | 6 chars | 12 chars + complexity |
+| Password policy | 6 chars | 10 chars + complexity |
 | ILogger usage | 0% | 100% |
 | CORS permissive | Yes | No |
 | Security headers | 0 | 5 |

@@ -19,6 +19,23 @@ public sealed class AuthService(HttpClient http)
     public Task<AuthApiResult> RegisterAsync(RegisterDto dto, CancellationToken ct = default) =>
         PostAsync("api/v1/auth/register", dto, ct);
 
+    public async Task<AuthApiResult> ConfirmEmailAsync(EmailConfirmationDto dto, CancellationToken ct = default)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await http.PostAsJsonAsync("api/v1/auth/confirm-email", dto, ct);
+        }
+        catch (HttpRequestException)
+        {
+            return new AuthApiResult(false, null, ["The server could not be reached. Is the API running?"]);
+        }
+
+        return response.IsSuccessStatusCode
+            ? new AuthApiResult(true, null, [])
+            : new AuthApiResult(false, null, await ApiErrorReader.ReadErrorsAsync(response, ct));
+    }
+
     private async Task<AuthApiResult> PostAsync(string endpoint, object dto, CancellationToken ct)
     {
         HttpResponseMessage response;

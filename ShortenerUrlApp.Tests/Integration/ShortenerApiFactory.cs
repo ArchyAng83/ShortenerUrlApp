@@ -49,6 +49,12 @@ namespace ShortenerUrlApp.Tests.Integration
             builder.UseSetting("JwtSettings:Issuer", "ShortenerUrlApp");
             builder.UseSetting("JwtSettings:Audience", "ShortenerUrlApp");
             builder.UseSetting("JwtSettings:ExpiryMinutes", "60");
+
+            // Integration tests issue many requests from one loopback IP; relax the
+            // brute-force/auth, url_create and global windows so the suite never trips 429s.
+            builder.UseSetting("RateLimiting:GlobalPermitLimit", "1000");
+            builder.UseSetting("RateLimiting:AuthPermitLimit", "1000");
+            builder.UseSetting("RateLimiting:UrlCreatePermitLimit", "1000");
         }
 
         async Task IAsyncLifetime.InitializeAsync()

@@ -12,6 +12,7 @@ namespace ShortenerUrlApp.WebApi.Controllers
 [Authorize]
 [Route("api/v1/urls")]
 [ApiController]
+[EnableRateLimiting("global")]
 public partial class ShortenerUrlController(IShortenerUrlService shortenerService) : ControllerBase
     {
         // Codes that would collide with app routes (/{code} redirect vs /health, /api, /openapi, /scalar).
@@ -96,6 +97,7 @@ public partial class ShortenerUrlController(IShortenerUrlService shortenerServic
         }
 
         [HttpPut]
+        [EnableRateLimiting("url_create")]
         public async Task<IActionResult> UpdateLongUrlAsync([FromBody] UpdateLongUrlDto longUrlDto, CancellationToken ct)
         {
             if (longUrlDto.LongUrl is null || !CheckUrl(longUrlDto.LongUrl))
@@ -109,6 +111,7 @@ public partial class ShortenerUrlController(IShortenerUrlService shortenerServic
         }
 
         [HttpDelete("{id:guid}")]
+        [EnableRateLimiting("url_create")]
         public async Task<IActionResult> DeleteUrlAsync(Guid id, CancellationToken ct)
         {
             var deleted = await shortenerService.DeleteUrlAsync(id, GetUserId(), ct);

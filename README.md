@@ -107,9 +107,9 @@ fast if a connection string or the JWT secret is missing.
 ```powershell
 docker compose up -d postgres redis
 
-$env:ConnectionStrings__DefaultConnection = "Host=localhost;Port=5432;Database=UrlShortenerDb;Username=postgres;Password=your_secure_password"
+$env:ConnectionStrings__DefaultConnection = "Host=localhost;Port=5432;Database=UrlShortenerDb;Username=postgres;Password=change-me-to-a-strong-password"
 $env:ConnectionStrings__Redis = "localhost:6379"
-$env:JwtSettings__Secret = "your-super-secret-key-minimum-32-characters-long"
+$env:JwtSettings__Secret = "change-me-to-a-64-character-random-string"
 
 dotnet run --project ShortenerUrl.WebApi --launch-profile https
 ```
@@ -121,13 +121,14 @@ dotnet run --project ShortenerUrlApp.WebUI --launch-profile https
 
 Notes:
 
-- The UI must run on `https://localhost:7159` (the `https` profile): that is the only
-  CORS origin allowed by the API. Adjust `AddCors` in
-  `ShortenerUrl.WebApi/DependencyInjection.cs` if you use a different port.
+- The UI must run on `https://localhost:7159` or `http://localhost:5209` (the `https`/default
+  profiles): those are the CORS origins allowed by the API. Change `Cors:AllowedOrigins` in
+  `appsettings.json` or the UI container origin if you use a different port.
 - The API base URL for the UI comes from `ShortenerUrlApp.WebUI/wwwroot/appsettings.json`
   (`ApiBaseUrl`, defaulting to `http://localhost:5153`).
-- `app.UseHttpsRedirection()` is currently disabled in `Program.cs`; the API serves plain
-  HTTP on port 5153 and HTTPS on port 7019.
+- Outside the Development environment the API enforces HTTPS (`UseHttpsRedirection` + `HSTS`)
+  and rate limiting (5 auth attempts / 15 min per client). Container build keeps plain HTTP on
+  port 8080 by design — place TLS termination at the reverse proxy/ingress.
 
 ### Run tests
 
@@ -252,15 +253,16 @@ maps the variables onto the API configuration (`ConnectionStrings__*`, `JwtSetti
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `POSTGRES_PASSWORD` | *(required, no default)* | PostgreSQL password |
+| `REDIS_PASSWORD` | *(required, no default)* | Redis password (`--requirepass` + connection string) |
+| `JWT_SECRET` | *(required, no default, ≥32 chars)* | HS256 signing key |
 | `POSTGRES_USER` | `postgres` | PostgreSQL role |
-| `POSTGRES_PASSWORD` | `your_secure_password` | PostgreSQL password — change it |
 | `POSTGRES_DB` | `UrlShortenerDb` | Database name |
 | `REDIS_URL` | `redis:6379` | Redis endpoint (reference value; Compose wires `ConnectionStrings__Redis`) |
-| `JWT_SECRET` | `your-super-secret-key-minimum-32-characters-long` | HS256 signing key, minimum 32 characters — change it |
 | `JWT_ISSUER` | `ShortenerUrlApp` | Expected token issuer |
 | `JWT_AUDIENCE` | `ShortenerUrlApp` | Expected token audience |
 | `JWT_EXPIRY_MINUTES` | `60` | Token lifetime |
-| `ASPNETCORE_ENVIRONMENT` | `Development` | Enables the OpenAPI document and Scalar UI |
+| `ASPNETCORE_ENVIRONMENT` | `Production` | Enables the OpenAPI document and Scalar UI only in Development |
 | `API_PORT` | `5153` | Host port mapped to the API container |
 | `UI_PORT` | `5209` | Host port mapped to the UI container |
 

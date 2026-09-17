@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace ShortenerUrlApp.WebApi.Services
 {
     /// <summary>
@@ -7,8 +9,11 @@ namespace ShortenerUrlApp.WebApi.Services
     /// Distinct from <see cref="ClickEventSyncWorker"/>, which drains the rich
     /// JSON click metadata ("click-events:{shortCode}") into the ClickEvents table.
     /// </summary>
-    public class ClickSyncWorker(IServiceProvider serviceProvider) : BackgroundService
+    public class ClickSyncWorker(
+        IServiceProvider serviceProvider,
+        ILogger<ClickSyncWorker>? logger = null) : BackgroundService
     {
+        private ILogger<ClickSyncWorker> Logger => logger ?? NullLogger<ClickSyncWorker>.Instance;
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -42,7 +47,7 @@ namespace ShortenerUrlApp.WebApi.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error Sync: {ex.Message}");
+                Logger.LogError(ex, "Error in ClickSyncWorker");
             }
         }
     }

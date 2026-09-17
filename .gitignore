@@ -369,6 +369,9 @@ FodyWeavers.xsd
 # Kilo AI agent config
 .kilo/
 
+# Playwright MCP snapshots
+.playwright-mcp/
+
 # Project management files (internal)
 AGENTS.md
 todo.md

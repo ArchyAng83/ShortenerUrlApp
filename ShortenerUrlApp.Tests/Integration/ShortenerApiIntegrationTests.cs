@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using ShortenerUrlApp.Shared.DTOs;
 using ShortenerUrlApp.WebApi.Entities;
 using Xunit;
@@ -55,6 +57,24 @@ namespace ShortenerUrlApp.Tests.Integration
             auth.Should().NotBeNull();
 
             return auth!.Token;
+        }
+
+        private static async Task<(string Token, string Email)> RegisterAndGetEmailAsync(HttpClient client)
+        {
+            var email = $"it_{Guid.NewGuid():N}@test.local";
+            var response = await client.PostAsJsonAsync("api/v1/auth/register", new
+            {
+                userName = "it_" + Guid.NewGuid().ToString("N")[..10],
+                email,
+                password = "Passw0rd!#Pass"
+            });
+
+            response.EnsureSuccessStatusCode();
+
+            var auth = await response.Content.ReadFromJsonAsync<AuthResponseDto>();
+            auth.Should().NotBeNull();
+
+            return (auth!.Token, email);
         }
 
         private async Task<string> CreateUrlAsync(
@@ -343,6 +363,66 @@ namespace ShortenerUrlApp.Tests.Integration
 
             var bytes = await response.Content.ReadAsByteArrayAsync();
             bytes.Should().NotBeEmpty();
+        }
+
+        // ---- Email confirmation ---------------------------------------------
+
+        [Fact]
+        public async Task Login_UnconfirmedEmail_Returns401()
+        {
+            using var client = CreateClient();
+
+            var (_, email) = await RegisterAndGetEmailAsync(client);
+
+            var login = await client.PostAsJsonAsync("api/v1/auth/login", new
+            {
+                email,
+                password = "Passw0rd!#Pass"
+            });
+
+            login.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            var errors = await login.Content.ReadFromJsonAsync<List<string>>();
+            errors.Should().Contain(e => e.Contains("Email not confirmed", StringComparison.OrdinalIgnoreCase));
+        }
+
+        [Fact]
+        public async Task ConfirmEmail_ThenLogin_Succeeds()
+        {
+            using var client = CreateClient();
+
+            var (_, email) = await RegisterAndGetEmailAsync(client);
+
+            using var scope = _factory.Services.CreateScope();
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await userManager.FindByEmailAsync(email);
+            user.Should().NotBeNull();
+            var confirmToken = await userManager.GenerateEmailConfirmationTokenAsync(user!);
+
+            var confirm = await client.PostAsJsonAsync("api/v1/auth/confirm-email", new EmailConfirmationDto(email, confirmToken));
+            confirm.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var login = await client.PostAsJsonAsync("api/v1/auth/login", new
+            {
+                email,
+                password = "Passw0rd!#Pass"
+            });
+
+            login.StatusCode.Should().Be(HttpStatusCode.OK);
+            var auth = await login.Content.ReadFromJsonAsync<AuthResponseDto>();
+            auth!.Token.Should().NotBeNullOrWhiteSpace();
+        }
+
+        [Fact]
+        public async Task ConfirmEmail_InvalidToken_Returns400()
+        {
+            using var client = CreateClient();
+
+            var (_, email) = await RegisterAndGetEmailAsync(client);
+
+            var confirm = await client.PostAsJsonAsync("api/v1/auth/confirm-email",
+                new EmailConfirmationDto(email, "invalid-token"));
+
+            confirm.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
     }
 }

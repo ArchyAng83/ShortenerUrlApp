@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using ShortenerUrlApp.WebApi.Data;
 using ShortenerUrlApp.WebApi.Entities;
 using StackExchange.Redis;
@@ -44,6 +45,9 @@ namespace ShortenerUrlApp.WebApi.Services
         // Per-tick drain, isolated so unit tests can exercise it without a minute-long delay.
         internal static async Task RunOneSyncAsync(IServiceProvider scopedProvider, CancellationToken ct)
         {
+            var logger = scopedProvider.GetService<ILogger<ClickEventSyncWorker>>()
+                         ?? NullLogger<ClickEventSyncWorker>.Instance;
+
             try
             {
                 await SyncAsync(scopedProvider, ct);
@@ -54,7 +58,7 @@ namespace ShortenerUrlApp.WebApi.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error ClickEventSync: {ex.Message}");
+                logger.LogError(ex, "Error in ClickEventSyncWorker");
             }
         }
 

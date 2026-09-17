@@ -10,7 +10,10 @@ namespace ShortenerUrlApp.WebApi.Services
 {
     // JWT authentication on top of ASP.NET Core Identity.
     // Login uses UserManager.CheckPasswordAsync (cookie-free), so no SignInManager is required.
-    public class AuthService(UserManager<ApplicationUser> userManager, IConfiguration configuration) : IAuthService
+    public class AuthService(
+        UserManager<ApplicationUser> userManager,
+        IConfiguration configuration,
+        IEmailSender<ApplicationUser>? emailSender = null) : IAuthService
     {
         public async Task<AuthResultDto> RegisterAsync(RegisterDto dto, CancellationToken ct = default)
         {
@@ -26,6 +29,16 @@ namespace ShortenerUrlApp.WebApi.Services
             if (!result.Succeeded)
             {
                 return AuthResultDto.Failure(result.Errors.Select(e => e.Description).ToList());
+            }
+
+            if (emailSender is not null && user.Email is not null)
+            {
+                var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
+                var appBaseUrl = configuration["AppBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5209";
+                var confirmationLink =
+                    $"{appBaseUrl}/confirm-email?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
+
+                await emailSender.SendConfirmationLinkAsync(user, user.Email, confirmationLink);
             }
 
             return AuthResultDto.Success(GenerateToken(user));
@@ -46,6 +59,20 @@ namespace ShortenerUrlApp.WebApi.Services
             }
 
             return AuthResultDto.Success(GenerateToken(user));
+        }
+
+        public async Task<bool> ConfirmEmailAsync(EmailConfirmationDto dto, CancellationToken ct = default)
+        {
+            var user = await userManager.FindByEmailAsync(dto.Email);
+
+            if (user is null)
+            {
+                return false;
+            }
+
+            var result = await userManager.ConfirmEmailAsync(user, dto.Token);
+
+            return result.Succeeded;
         }
 
         private AuthResponseDto GenerateToken(ApplicationUser user)

@@ -1,10 +1,15 @@
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace ShortenerUrlApp.WebApi.Services
 {
     // Periodically removes links whose ExpiresAt has passed and evicts their Redis keys.
     // Without this worker expired rows would linger in PostgreSQL forever; redirects are
     // already blocked at read time, so this is pure storage hygiene.
-    public class ExpiredLinksCleanupWorker(IServiceProvider serviceProvider) : BackgroundService
+    public class ExpiredLinksCleanupWorker(
+        IServiceProvider serviceProvider,
+        ILogger<ExpiredLinksCleanupWorker>? logger = null) : BackgroundService
     {
+        private ILogger<ExpiredLinksCleanupWorker> Logger => logger ?? NullLogger<ExpiredLinksCleanupWorker>.Instance;
         private static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -36,7 +41,7 @@ namespace ShortenerUrlApp.WebApi.Services
 
                 if (deleted > 0)
                 {
-                    Console.WriteLine($"ExpiredLinksCleanup: removed {deleted} expired link(s).");
+                    Logger.LogInformation("ExpiredLinksCleanupWorker removed {Deleted} expired link(s)", deleted);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -45,7 +50,7 @@ namespace ShortenerUrlApp.WebApi.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error ExpiredCleanup: {ex.Message}");
+                Logger.LogError(ex, "Error in ExpiredLinksCleanupWorker");
             }
         }
     }

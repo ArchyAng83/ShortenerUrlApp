@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using ShortenerUrlApp.WebApi.Data;
 using ShortenerUrlApp.WebApi.Entities;
@@ -45,66 +46,75 @@ namespace ShortenerUrlApp.WebApi
             {
                 var config = ConfigurationOptions.Parse(redisConnectionString);
                 config.Ssl = configuration.GetValue<bool>("Redis__Ssl");
-                config.AbortOnConnectFail = true;
+                // AbortOnConnectFail is governed by the connection string (abortConnect=...):
+                // docker-compose sets it to false so a transient Redis blip fails the worker
+                // run instead of taking the whole host down (BackgroundServiceExceptionBehavior).
                 return ConnectionMultiplexer.Connect(config);
             });
 
             // Allowed browser origins come from configuration ('Cors:AllowedOrigins' in appsettings
-            // or Cors__AllowedOrigins__N env vars); the fallback covers the docker UI and the dev server.
-var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+            // or Cors__AllowedOrigins__N env vars); no hardcoded fallback — CORS is effectively
+            // disabled when nothing is configured.
+            var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
                 is { Length: > 0 } configured
                     ? configured
-                    : ["http://localhost:5209", "https://localhost:7159"];
+                    : [];
 
             services.AddCors(options =>
             {
                 options.AddDefaultPolicy(policy =>
                 {
-                    policy.SetIsOriginAllowed(origin =>
-                        origin == null
-                        || allowedOrigins.Contains(origin)
-                        || (origin != null && origin.Contains("localhost")))
-                          .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                    policy.WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                           .WithHeaders("Content-Type", "Authorization", "X-Requested-With", "Accept")
                           .WithExposedHeaders("X-Total-Count");
+
+                    if (allowedOrigins.Length > 0)
+                    {
+                        policy.WithOrigins(allowedOrigins);
+                    }
                 });
             });
 
             // Rate limiting policies
-            // Default limits are lenient for test environments; configure appsettings.Production.json for stricter limits.
+            // Defaults match the security plan; override via 'RateLimiting:*' env vars
+            // (e.g. RateLimiting__AuthPermitLimit=1000 in a test/docker environment).
             services.AddRateLimiter(options =>
             {
                 options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
+                int PermitLimit(string key, int fallback) =>
+                    configuration.GetValue<int?>($"RateLimiting:{key}") ?? fallback;
+
                 options.AddFixedWindowLimiter("global", limiter =>
                 {
-                    limiter.PermitLimit = 100;
+                    limiter.PermitLimit = PermitLimit("GlobalPermitLimit", 100);
                     limiter.Window = TimeSpan.FromMinutes(1);
                     limiter.QueueLimit = 10;
                 });
 
+                // Brute-force protection: 5 auth attempts per 15 minutes per client.
                 options.AddFixedWindowLimiter("auth", limiter =>
                 {
-                    limiter.PermitLimit = 1000;
-                    limiter.Window = TimeSpan.FromMinutes(1);
+                    limiter.PermitLimit = PermitLimit("AuthPermitLimit", 5);
+                    limiter.Window = TimeSpan.FromMinutes(15);
                     limiter.QueueLimit = 0;
                 });
 
                 options.AddFixedWindowLimiter("redirect", limiter =>
                 {
-                    limiter.PermitLimit = 100;
+                    limiter.PermitLimit = PermitLimit("RedirectPermitLimit", 30);
                     limiter.Window = TimeSpan.FromMinutes(1);
                 });
 
                 options.AddFixedWindowLimiter("url_create", limiter =>
                 {
-                    limiter.PermitLimit = 50;
+                    limiter.PermitLimit = PermitLimit("UrlCreatePermitLimit", 20);
                     limiter.Window = TimeSpan.FromHours(1);
                 });
 
                 options.AddFixedWindowLimiter("analytics", limiter =>
                 {
-                    limiter.PermitLimit = 30;
+                    limiter.PermitLimit = PermitLimit("AnalyticsPermitLimit", 10);
                     limiter.Window = TimeSpan.FromMinutes(1);
                 });
             });
@@ -112,12 +122,12 @@ var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[
             // Identity without UI/cookies: UserManager + EF stores + token providers.
             services.AddIdentityCore<ApplicationUser>(options =>
             {
-                options.Password.RequiredLength = 12;
+                options.Password.RequiredLength = 10;
                 options.Password.RequireDigit = true;
                 options.Password.RequireNonAlphanumeric = true;
                 options.Password.RequireUppercase = true;
                 options.Password.RequireLowercase = true;
-                options.Password.RequiredUniqueChars = 0;
+                options.Password.RequiredUniqueChars = 3;
                 options.User.RequireUniqueEmail = true;
 
                 options.Lockout.AllowedForNewUsers = true;
@@ -126,6 +136,9 @@ var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[
             })
             .AddEntityFrameworkStores<ShortenerUrlDbContext>()
             .AddDefaultTokenProviders();
+
+            // Logs confirmation/reset links until a real SMTP-backed sender is configured.
+            services.AddScoped<IEmailSender<ApplicationUser>, LoggingEmailSender>();
 
             var jwtSection = configuration.GetSection("JwtSettings");
             var jwtSecret = jwtSection["Secret"];
@@ -173,13 +186,14 @@ var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[
         {
             using var scope = app.ApplicationServices.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ShortenerUrlDbContext>();
+            var logger = scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Migrations");
             try
             {
                 dbContext.Database.Migrate();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Migration error: {ex.Message}");
+                logger?.LogError(ex, "Migration error");
             }
         }
     }
