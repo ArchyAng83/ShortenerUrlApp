@@ -149,7 +149,7 @@ namespace ShortenerUrlApp.WebApi.Services
 
             try
             {
-                await Task.WhenAll(increment, push).ConfigureAwait(false);
+                await Task.WhenAll(increment, push);
             }
             catch (Exception ex)
             {
@@ -177,7 +177,7 @@ namespace ShortenerUrlApp.WebApi.Services
 
                 string json = JsonSerializer.Serialize(meta, ClickJsonOptions);
 
-                await _cache.ListLeftPushAsync($"click-events:{shortCode}", json).ConfigureAwait(false);
+                await _cache.ListLeftPushAsync($"click-events:{shortCode}", json);
             }
             catch (OperationCanceledException)
             {
