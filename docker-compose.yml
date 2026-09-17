@@ -22,7 +22,10 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required} --appendonly yes
     container_name: shortener-redis
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     ports:
       - "6379:6379"
     volumes:
@@ -47,7 +50,7 @@ services:
       # Keep CORS in sync with the published UI port/origin (index 0 of Cors:AllowedOrigins).
       - Cors__AllowedOrigins__0=${UI_ORIGIN:-http://localhost:${UI_PORT:-5209}}
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=${POSTGRES_DB:-UrlShortenerDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      - ConnectionStrings__Redis=redis:6379
+      - ConnectionStrings__Redis=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       - JwtSettings__Secret=${JWT_SECRET:?JWT_SECRET is required}
       - JwtSettings__Issuer=${JWT_ISSUER:-ShortenerUrlApp}
       - JwtSettings__Audience=${JWT_AUDIENCE:-ShortenerUrlApp}

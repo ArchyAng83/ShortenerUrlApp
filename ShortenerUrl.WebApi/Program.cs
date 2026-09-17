@@ -23,23 +23,23 @@ if (app.Environment.IsDevelopment())
 }
 
 if (!app.Environment.IsDevelopment())
-            {
-                app.UseHsts();
-                app.UseHttpsRedirection();
-            }
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
 
-            // Security headers middleware
-            app.Use(async (context, next) =>
-            {
-                context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-                context.Response.Headers.Append("X-Frame-Options", "DENY");
-                context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
-                context.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-                await next();
-            });
+// Security headers middleware
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    context.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    await next();
+});
 
-            app.UseCors();
-            app.UseRateLimiter();
+app.UseCors();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
