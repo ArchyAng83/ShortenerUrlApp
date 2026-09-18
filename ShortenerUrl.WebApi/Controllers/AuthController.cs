@@ -47,5 +47,26 @@ namespace ShortenerUrlApp.WebApi.Controllers
                 ? Ok()
                 : BadRequest(new[] { "Invalid or expired email confirmation token." });
         }
+
+        [HttpPost("forgot-password")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> ForgotPasswordAsync([FromBody] ForgotPasswordDto dto, CancellationToken ct)
+        {
+            await authService.ForgotPasswordAsync(dto, ct);
+
+            // Always report success so the response does not leak which addresses are registered.
+            return Ok();
+        }
+
+        [HttpPost("reset-password")]
+        [EnableRateLimiting("auth")]
+        public async Task<IActionResult> ResetPasswordAsync([FromBody] ResetPasswordDto dto, CancellationToken ct)
+        {
+            var reset = await authService.ResetPasswordAsync(dto, ct);
+
+            return reset
+                ? Ok()
+                : BadRequest(new[] { "Invalid or expired password reset token." });
+        }
     }
 }

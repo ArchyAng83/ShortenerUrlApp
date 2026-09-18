@@ -75,6 +75,40 @@ namespace ShortenerUrlApp.WebApi.Services
             return result.Succeeded;
         }
 
+        public async Task<bool> ForgotPasswordAsync(ForgotPasswordDto dto, CancellationToken ct = default)
+        {
+            var user = await userManager.FindByEmailAsync(dto.Email);
+
+            // Do not reveal whether an account exists for the address (anti-enumeration).
+            if (user is null || emailSender is null || user.Email is null)
+            {
+                return false;
+            }
+
+            var token = await userManager.GeneratePasswordResetTokenAsync(user);
+            var appBaseUrl = configuration["AppBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5209";
+            var resetLink =
+                $"{appBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
+
+            await emailSender.SendPasswordResetLinkAsync(user, user.Email, resetLink);
+
+            return true;
+        }
+
+        public async Task<bool> ResetPasswordAsync(ResetPasswordDto dto, CancellationToken ct = default)
+        {
+            var user = await userManager.FindByEmailAsync(dto.Email);
+
+            if (user is null)
+            {
+                return false;
+            }
+
+            var result = await userManager.ResetPasswordAsync(user, dto.Token, dto.NewPassword);
+
+            return result.Succeeded;
+        }
+
         private AuthResponseDto GenerateToken(ApplicationUser user)
         {
             var jwtSection = configuration.GetSection("JwtSettings");

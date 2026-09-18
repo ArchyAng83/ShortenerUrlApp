@@ -7,5 +7,7 @@ namespace ShortenerUrlApp.WebApi.Services
         Task<AuthResultDto> RegisterAsync(RegisterDto dto, CancellationToken ct = default);
         Task<AuthResultDto> LoginAsync(LoginDto dto, CancellationToken ct = default);
         Task<bool> ConfirmEmailAsync(EmailConfirmationDto dto, CancellationToken ct = default);
+        Task<bool> ForgotPasswordAsync(ForgotPasswordDto dto, CancellationToken ct = default);
+        Task<bool> ResetPasswordAsync(ResetPasswordDto dto, CancellationToken ct = default);
     }
 }
