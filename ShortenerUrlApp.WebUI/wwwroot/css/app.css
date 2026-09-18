@@ -111,3 +111,18 @@ h1:focus {
 .mud-snackbar-action {
     pointer-events: auto !important;
 }
+
+/* Light mode drawer: MainLayout paints the sidebar with the app bar color and
+   adds the "drawer-accent" class. On that colored surface the active nav link
+   must not stay indigo-on-indigo, so it gets a white text + light pill.
+   The doubled .mud-drawer prefix keeps the selector ahead of MudBlazor's
+   .mud-navmenu.mud-navmenu-default .mud-nav-link.active:not(.mud-nav-link-disabled). */
+.mud-drawer.drawer-accent .mud-navmenu-default .mud-nav-link.active {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+    .mud-drawer.drawer-accent .mud-navmenu-default .mud-nav-link.active:hover,
+    .mud-drawer.drawer-accent .mud-navmenu-default .mud-nav-link.active:focus-visible {
+        background-color: rgba(255, 255, 255, 0.2);
+    }
