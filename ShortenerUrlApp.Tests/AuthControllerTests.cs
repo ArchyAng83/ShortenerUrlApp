@@ -82,5 +82,70 @@ namespace ShortenerUrlApp.Tests
             var ok = result.Should().BeOfType<OkObjectResult>().Subject;
             ok.Value.Should().BeOfType<AuthResponseDto>().Which.UserName.Should().Be("vasya");
         }
+
+        [Fact]
+        public async Task ForgotPassword_ForUnknownEmail_ShouldStillReturnOk()
+        {
+            // Anti-enumeration: the controller must not reveal whether the account exists.
+            var authMock = new Mock<IAuthService>();
+            authMock
+                .Setup(s => s.ForgotPasswordAsync(It.IsAny<ForgotPasswordDto>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+
+            var controller = new AuthController(authMock.Object);
+
+            var result = await controller.ForgotPasswordAsync(
+                new ForgotPasswordDto("ghost@example.com"), CancellationToken.None);
+
+            result.Should().BeOfType<OkResult>();
+        }
+
+        [Fact]
+        public async Task ForgotPassword_ForKnownEmail_ShouldReturnOk()
+        {
+            var authMock = new Mock<IAuthService>();
+            authMock
+                .Setup(s => s.ForgotPasswordAsync(It.IsAny<ForgotPasswordDto>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var controller = new AuthController(authMock.Object);
+
+            var result = await controller.ForgotPasswordAsync(
+                new ForgotPasswordDto("vasya@example.com"), CancellationToken.None);
+
+            result.Should().BeOfType<OkResult>();
+        }
+
+        [Fact]
+        public async Task ResetPassword_OnSuccess_ShouldReturnOk()
+        {
+            var authMock = new Mock<IAuthService>();
+            authMock
+                .Setup(s => s.ResetPasswordAsync(It.IsAny<ResetPasswordDto>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var controller = new AuthController(authMock.Object);
+
+            var result = await controller.ResetPasswordAsync(
+                new ResetPasswordDto("vasya@example.com", "token", "B!c5d6e7f8g9h0"), CancellationToken.None);
+
+            result.Should().BeOfType<OkResult>();
+        }
+
+        [Fact]
+        public async Task ResetPassword_OnInvalidToken_ShouldReturnBadRequest()
+        {
+            var authMock = new Mock<IAuthService>();
+            authMock
+                .Setup(s => s.ResetPasswordAsync(It.IsAny<ResetPasswordDto>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+
+            var controller = new AuthController(authMock.Object);
+
+            var result = await controller.ResetPasswordAsync(
+                new ResetPasswordDto("vasya@example.com", "bad-token", "B!c5d6e7f8g9h0"), CancellationToken.None);
+
+            result.Should().BeOfType<BadRequestObjectResult>();
+        }
     }
 }

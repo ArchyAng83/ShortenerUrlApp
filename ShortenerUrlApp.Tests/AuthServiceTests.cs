@@ -63,6 +63,42 @@ namespace ShortenerUrlApp.Tests
             ClockSkew = TimeSpan.Zero
         };
 
+        private static AuthService CreateAuthServiceWithSender(out CapturingEmailSender sender)
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddDataProtection();
+            services.AddDbContext<ShortenerUrlDbContext>(o => o.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+            services.AddIdentityCore<ApplicationUser>(o =>
+            {
+                o.Password.RequiredLength = 10;
+                o.Password.RequireDigit = true;
+                o.Password.RequireNonAlphanumeric = true;
+                o.Password.RequireUppercase = true;
+                o.Password.RequireLowercase = true;
+                o.Password.RequiredUniqueChars = 3;
+                o.User.RequireUniqueEmail = true;
+            })
+            .AddEntityFrameworkStores<ShortenerUrlDbContext>()
+            .AddDefaultTokenProviders();
+
+            var provider = services.BuildServiceProvider();
+
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["JwtSettings:Secret"] = Secret,
+                    ["JwtSettings:Issuer"] = "ShortenerUrlApp",
+                    ["JwtSettings:Audience"] = "ShortenerUrlApp",
+                    ["JwtSettings:ExpiryMinutes"] = "60",
+                    ["AppBaseUrl"] = "http://localhost:5209"
+                })
+                .Build();
+
+            sender = new CapturingEmailSender();
+            return new AuthService(provider.GetRequiredService<UserManager<ApplicationUser>>(), configuration, sender);
+        }
+
         [Fact]
         public async Task RegisterAsync_ValidInput_ShouldReturnValidJwt()
         {
@@ -207,9 +243,83 @@ namespace ShortenerUrlApp.Tests
             confirmed.Should().BeFalse();
         }
 
+        [Fact]
+        public async Task ForgotPasswordAsync_KnownEmail_SendsResetLink()
+        {
+            var service = CreateAuthServiceWithSender(out var sender);
+            await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "A!b2c3d4e5f6"));
+
+            var requested = await service.ForgotPasswordAsync(new ForgotPasswordDto("vasya@example.com"));
+
+            requested.Should().BeTrue();
+            sender.ResetLink.Should().NotBeNullOrWhiteSpace();
+            var query = QueryHelpers.ParseQuery(new Uri(sender.ResetLink!).Query);
+            query["email"].ToString().Should().Be("vasya@example.com");
+            query["token"].ToString().Should().NotBeNullOrWhiteSpace();
+        }
+
+        [Fact]
+        public async Task ForgotPasswordAsync_UnknownEmail_ReturnsFalse_AndSendsNoLink()
+        {
+            var service = CreateAuthServiceWithSender(out var sender);
+
+            var requested = await service.ForgotPasswordAsync(new ForgotPasswordDto("ghost@example.com"));
+
+            requested.Should().BeFalse();
+            sender.ResetLink.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task ForgotPasswordFlow_ResetsPassword_AndAllowsLoginWithNewPassword()
+        {
+            var service = CreateAuthServiceWithSender(out var sender);
+            await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "A!b2c3d4e5f6"));
+
+            var confirmed = await service.ConfirmEmailAsync(
+                new EmailConfirmationDto("vasya@example.com",
+                    QueryHelpers.ParseQuery(new Uri(sender.ConfirmationLink!).Query)["token"].ToString()));
+            confirmed.Should().BeTrue();
+
+            await service.ForgotPasswordAsync(new ForgotPasswordDto("vasya@example.com"));
+            var resetToken = QueryHelpers.ParseQuery(new Uri(sender.ResetLink!).Query)["token"].ToString();
+
+            var reset = await service.ResetPasswordAsync(
+                new ResetPasswordDto("vasya@example.com", resetToken, "B!c5d6e7f8g9h0"));
+
+            reset.Should().BeTrue();
+            (await service.LoginAsync(new LoginDto("vasya@example.com", "B!c5d6e7f8g9h0"))).Succeeded
+                .Should().BeTrue();
+            (await service.LoginAsync(new LoginDto("vasya@example.com", "A!b2c3d4e5f6"))).Succeeded
+                .Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task ResetPasswordAsync_InvalidToken_ReturnsFalse()
+        {
+            var service = CreateAuthServiceWithSender(out _);
+            await service.RegisterAsync(new RegisterDto("vasya", "vasya@example.com", "A!b2c3d4e5f6"));
+
+            var reset = await service.ResetPasswordAsync(
+                new ResetPasswordDto("vasya@example.com", "bogus-token", "B!c5d6e7f8g9h0"));
+
+            reset.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task ResetPasswordAsync_UnknownEmail_ReturnsFalse()
+        {
+            var service = CreateAuthServiceWithSender(out _);
+
+            var reset = await service.ResetPasswordAsync(
+                new ResetPasswordDto("ghost@example.com", "token", "B!c5d6e7f8g9h0"));
+
+            reset.Should().BeFalse();
+        }
+
         private sealed class CapturingEmailSender : IEmailSender<ApplicationUser>
         {
             public string? ConfirmationLink { get; private set; }
+            public string? ResetLink { get; private set; }
 
             public Task SendConfirmationLinkAsync(ApplicationUser user, string email, string confirmationLink)
             {
@@ -217,8 +327,11 @@ namespace ShortenerUrlApp.Tests
                 return Task.CompletedTask;
             }
 
-            public Task SendPasswordResetLinkAsync(ApplicationUser user, string email, string resetLink) =>
-                Task.CompletedTask;
+            public Task SendPasswordResetLinkAsync(ApplicationUser user, string email, string resetLink)
+            {
+                ResetLink = resetLink;
+                return Task.CompletedTask;
+            }
 
             public Task SendPasswordResetCodeAsync(ApplicationUser user, string email, string resetCode) =>
                 Task.CompletedTask;
