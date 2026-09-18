@@ -19,12 +19,21 @@ public sealed class AuthService(HttpClient http)
     public Task<AuthApiResult> RegisterAsync(RegisterDto dto, CancellationToken ct = default) =>
         PostAsync("api/v1/auth/register", dto, ct);
 
-    public async Task<AuthApiResult> ConfirmEmailAsync(EmailConfirmationDto dto, CancellationToken ct = default)
+    public Task<AuthApiResult> ConfirmEmailAsync(EmailConfirmationDto dto, CancellationToken ct = default) =>
+        PostNoContentAsync("api/v1/auth/confirm-email", dto, ct);
+
+    public Task<AuthApiResult> ForgotPasswordAsync(ForgotPasswordDto dto, CancellationToken ct = default) =>
+        PostNoContentAsync("api/v1/auth/forgot-password", dto, ct);
+
+    public Task<AuthApiResult> ResetPasswordAsync(ResetPasswordDto dto, CancellationToken ct = default) =>
+        PostNoContentAsync("api/v1/auth/reset-password", dto, ct);
+
+    private async Task<AuthApiResult> PostNoContentAsync(string endpoint, object dto, CancellationToken ct)
     {
         HttpResponseMessage response;
         try
         {
-            response = await http.PostAsJsonAsync("api/v1/auth/confirm-email", dto, ct);
+            response = await http.PostAsJsonAsync(endpoint, dto, ct);
         }
         catch (HttpRequestException)
         {
